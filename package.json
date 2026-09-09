@@ -1,0 +1,42 @@
+{
+  "name": "@xyo-network/autodrive-datalake-sample",
+  "private": true,
+  "description": "Planning-stage sample for selective Auto Drive datalakes with the XYO SDK",
+  "homepage": "https://github.com/XYOracleNetwork/autodrive-datalake-sample",
+  "bugs": {
+    "url": "https://github.com/XYOracleNetwork/autodrive-datalake-sample/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/XYOracleNetwork/autodrive-datalake-sample.git"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "XYO Network",
+    "url": "https://xyo.network"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "xy build --strict --no-defer",
+    "check": "xy check --strict --no-defer",
+    "compile": "xy compile --no-defer",
+    "lint": "xy lint --strict --no-defer",
+    "test": "xy test --no-defer"
+  },
+  "devDependencies": {
+    "@ariestools/eslint-config-flat": "~10.0.5",
+    "@ariestools/toolchain": "~10.0.5",
+    "@ariestools/tsconfig": "~10.0.5",
+    "@ariestools/vitest-config": "~10.0.5",
+    "@types/node": "~24.13.3",
+    "eslint": "~10.10.0",
+    "eslint-import-resolver-typescript": "~4.4.5",
+    "typescript": "~6.0.3",
+    "vite": "~8.2.2",
+    "vitest": "~5.0.0"
+  },
+  "packageManager": "pnpm@12.3.4",
+  "volta": {
+    "node": "24.14.1"
+  }
+}

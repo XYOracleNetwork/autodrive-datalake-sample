@@ -1,0 +1,13 @@
+packages:
+  - 'packages/*'
+
+minimumReleaseAge: 1440
+minimumReleaseAgeExclude:
+  - '@ariestools/*'
+  - "@xyo-network/*"
+
+verifyDepsBeforeRun: false
+
+allowBuilds:
+  esbuild: true
+  unrs-resolver: true
