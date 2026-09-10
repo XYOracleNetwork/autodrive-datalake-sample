@@ -29,3 +29,5 @@ jobs:
         run: pnpm build
       - name: Run offline tests
         run: pnpm test
+      - name: Run local XL1 sample flow
+        run: pnpm test:sample

@@ -1,0 +1,44 @@
+{
+  "name": "@xyo-network/autodrive-sample-protocol",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Environment-neutral payload admission and dapp profile for the Auto Drive sample",
+  "license": "MIT",
+  "sideEffects": false,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/neutral/index.d.ts",
+      "default": "./dist/neutral/index.mjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "@ariestools/lib-neutral": "~10.0.5",
+    "@ariestools/sdk": "~8.3.0",
+    "@ariestools/toolchain": "~10.0.5",
+    "@ariestools/tsconfig": "~10.0.5",
+    "@noble/hashes": "~2.4.0",
+    "@opentelemetry/api": "~1.9.1",
+    "@xyo-network/dapp-kit": "~2.0.0",
+    "@xyo-network/sdk": "~7.4.1",
+    "@xyo-network/sdk-protocol": "~7.4.2",
+    "eslint": "~10.10.0",
+    "eslint-import-resolver-typescript": "~4.4.5",
+    "typescript": "~6.0.3",
+    "vite": "~8.2.2",
+    "vitest": "~5.0.0",
+    "zod": "~4.5.4"
+  },
+  "peerDependencies": {
+    "@ariestools/sdk": "^8.3",
+    "@noble/hashes": "^2.4",
+    "@opentelemetry/api": "^1.9",
+    "@xyo-network/dapp-kit": "^2.0",
+    "@xyo-network/sdk": "^7.4",
+    "@xyo-network/sdk-protocol": "^7.4",
+    "zod": "^4.5"
+  }
+}

@@ -1,16 +1,37 @@
 # Auto Drive datalake sample
 
-Status: implementation planned. This repository contains the monorepo foundation
-and [implementation plan](docs/IMPLEMENTATION_PLAN.md), not a completed dapp.
+Status: implementation in progress. The [implementation plan](docs/IMPLEMENTATION_PLAN.md)
+defines the target behavior; it is not evidence of a completed or provider-qualified
+dapp. README documents the commands and behavior currently implemented.
 
 ## Product
 
 A small website lets a user compose one XYO payload of at most 4,096 UTF-8 bytes
 and press **Perma-Store**. The XL1 Chrome Wallet approves and signs an XL1
-transaction. The sample stores the sole application payload in the existing
-Aries Auto Drive datalake, verifies retrieval, and then uses the wallet to
+transaction. The sample stores the sole application payload in Auto Drive,
+verifies retrieval, and then uses the wallet to
 broadcast the signed transaction. The page reports storage and chain finality
 separately and can retrieve the payload again by its XYO hash.
+
+The editor shows the complete `{ schema, salt, data }` payload. The fixed schema
+is `com.example.message`. Each new draft receives a cryptographically random
+32-byte salt encoded as 64 lowercase hexadecimal characters; the approved salt
+is retained through signing, storage, retries, and recovery, and counts toward
+the 4,096-byte limit.
+
+The same importable application runtime must support two entry points: a
+headless functional Vitest run using dapp-kit's local XL1 installer, and a real
+browser application started with `pnpm start:local`, `pnpm start:sequence`, or
+`pnpm start:mainnet` (`pnpm start` defaults to Sequence). The test replaces wallet
+approval and external storage transports at explicit boundaries; it uses real
+payload validation, authentication, transaction orchestration, and local-chain
+finality. Passing it establishes local functional behavior, not Chrome Wallet
+or Auto Drive qualification.
+
+Local startup uses the published XYO Auto Drive adapter directly inside the
+sample server, requiring only `AUTODRIVE_API_KEY` for storage. Sequence/Mainnet
+use the existing Aries Auto Drive plane. A complete explicit Aries connection
+can also override local mode. Local selects the chain, not a mock storage backend.
 
 The GitHub repository stays private until its owner explicitly requests a
 transition to public. The initial chain target is Sequence, with explicit network
@@ -35,7 +56,7 @@ Auto Drive payloads private: this demonstration stores plaintext content.
    agree at the boundary, including non-ASCII input. Invalid JSON, wrong schemas,
    extra top-level fields, unsigned/invalid evidence, and oversized payloads
    cause zero Auto Drive writes.
-4. **Required storage:** Before broadcast, the existing Aries Auto Drive backend
+4. **Required storage:** Before broadcast, the selected real Auto Drive backend
    stores the payload, and a fresh lookup returns the same normalized bytes and
    recomputed XYO hash. A rejection, incomplete acknowledgment, unavailable
    provider, or failed read-back prevents broadcast. No alternate store silently
@@ -55,11 +76,33 @@ Auto Drive payloads private: this demonstration stores plaintext content.
    datalake availability, write-before-broadcast, expected chain identity, and
    finalized consistency are enforced by runtime checks as well as declared in
    configuration.
-8. **Reproducible qualification:** Root build, strict policy/lint/dependency
-   checks, and offline tests pass. Real Auto Drive tests require an explicit
-   separate command and are excluded from ordinary test discovery and CI. A
-   documented Chrome Wallet acceptance run proves the end-to-end path; headless
-   signing tests alone do not satisfy criterion 1.
+8. **Runnable sample:** After a clean clone, installation with the pinned pnpm,
+   and the documented prerequisites and small server-side `.env` configuration,
+   the three named startup commands select XL1 settings without `.env` chain
+   configuration, start the website and sample service together, and reach
+   dependency readiness. In local mode, all three `ARIES_*` fields may be blank:
+   `AUTODRIVE_API_KEY` selects the published XYO provider adapter, fixed provider
+   endpoint, bucket, and namespace without a separate Aries service or token.
+   Public profiles require the complete Aries connection. Partial Aries settings
+   fail rather than mixing credentials; missing configuration cannot select memory
+   storage. Startup makes no paid writes, preserves storage identity and ledger
+   across restarts, and shuts down owned resources cleanly. Running an actual
+   Aries server from this sample remains a separate artifact/composition gate.
+9. **Functional Vitest sample:** `pnpm test:sample` uses
+   `@xyo-network/dapp-kit-vitest-config`'s opt-in `local-xl1` project to exercise
+   the same runtime through build/sign, authenticated admission, one-payload
+   storage/read-back, broadcast, finalized inclusion, and retrieval. It boots and
+   stops its own local chain and needs no external provider or wallet secrets.
+   Wrong network, failed read-back, duplicate confirmation, and restart recovery
+   are tested at the relevant boundaries. Headless signing remains test-only.
+10. **Reproducible qualification:** Root build, strict policy/lint/dependency
+    checks, and offline tests pass. Ordinary `pnpm test` starts no chain and makes
+    no external provider requests. Real Auto Drive tests require an explicit
+    separate command and are excluded from ordinary test discovery and CI. A
+    documented Chrome Wallet acceptance run proves the real end-to-end path;
+    local functional tests alone do not satisfy criterion 1 or 4.
 
-The initialization commit can satisfy repository checks without application
-tests. It does not claim these product acceptance criteria are implemented.
+Remove the initialization `passWithNoTests` allowance when the first application
+behavior supplies tests. Track local, real-provider, Chrome Wallet, and hosted
+acceptance independently; an implemented command alone does not satisfy these
+product acceptance criteria.

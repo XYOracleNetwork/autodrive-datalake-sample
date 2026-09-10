@@ -1,0 +1,49 @@
+{
+  "name": "@xyo-network/autodrive-sample-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome Wallet website for the Auto Drive datalake sample",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "package-compile": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@ariestools/sdk": "~8.3.0",
+    "@ariestools/sdk-react": "~11.1.6",
+    "@emotion/react": "~11.14.0",
+    "@emotion/styled": "~11.14.1",
+    "@mui/material": "~9.4.0",
+    "@mui/material-pigment-css": "~9.4.0",
+    "@noble/hashes": "~2.4.0",
+    "@opentelemetry/api": "~1.9.1",
+    "@pigment-css/react": "~0.0.31",
+    "@xyo-network/autodrive-sample-client": "workspace:~",
+    "@xyo-network/autodrive-sample-protocol": "workspace:~",
+    "@xyo-network/dapp-kit": "~2.0.0",
+    "@xyo-network/sdk": "~7.4.1",
+    "@xyo-network/sdk-protocol": "~7.4.2",
+    "@xyo-network/xl1-react-client-sdk": "~5.5.3",
+    "@xyo-network/xl1-sdk": "~5.5.3",
+    "async-mutex": "~0.5.0",
+    "ethers": "~6.17.0",
+    "react": "~19.2.8",
+    "react-dom": "~19.2.8",
+    "zod": "~4.5.4"
+  },
+  "devDependencies": {
+    "@ariestools/eslint-config-react-flat": "~10.0.5",
+    "@ariestools/toolchain": "~10.0.5",
+    "@ariestools/tsconfig": "~10.0.5",
+    "@ariestools/tsconfig-dom": "~10.0.5",
+    "@ariestools/tsconfig-react": "~10.0.5",
+    "@types/react": "~19.2.18",
+    "@types/react-dom": "~19.2.7",
+    "eslint": "~10.10.0",
+    "eslint-import-resolver-typescript": "~4.4.5",
+    "typescript": "~6.0.3",
+    "vite": "~8.2.2"
+  }
+}

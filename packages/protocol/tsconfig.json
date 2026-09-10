@@ -1,0 +1,6 @@
+{
+  "extends": "@ariestools/tsconfig",
+  "compilerOptions": { "types": ["@ariestools/lib-neutral"] },
+  "include": ["src", "xy.config.ts"],
+  "exclude": ["dist", "node_modules"]
+}

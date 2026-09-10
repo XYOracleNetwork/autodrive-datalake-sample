@@ -1,10 +1,13 @@
-import { defineXyVitestConfig } from '@ariestools/vitest-config'
+import { defineDappKitVitestConfig } from '@xyo-network/dapp-kit-vitest-config'
 
-export default defineXyVitestConfig({
+export default defineDappKitVitestConfig({
   exclude: ['**/spec/live/**', '**/*.live.ts'],
-  test: {
-    // This initial repository contains plans and tooling, without app code.
-    // Remove this allowance when the first implemented behavior adds its tests.
-    passWithNoTests: true,
+  installers: {
+    localXl1: {
+      optInOnly: true,
+      hookTimeout: 120_000,
+      testTimeout: 120_000,
+      test: { exclude: ['**/spec/live/**', '**/*.live.ts'], fileParallelism: false },
+    },
   },
 })

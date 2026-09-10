@@ -1,6 +1,30 @@
 {
   "version": 1,
   "skills": {
+    "ariestools-sdk": {
+      "source": "ariestools/ariestools-skills",
+      "sourceType": "github",
+      "skillPath": "skills/ariestools-sdk/SKILL.md",
+      "computedHash": "cf16e71f5a00e0ce504d815d702eac71ecc723994ea69ee3542822ef2de4b794"
+    },
+    "xl1-knowledge": {
+      "source": "XYOracleNetwork/xyo-skills",
+      "sourceType": "github",
+      "skillPath": "skills/xl1-knowledge/SKILL.md",
+      "computedHash": "54cd317e5cf3266bca93538298a9defaf98f555b839c1edba019a3710664d6ad"
+    },
+    "xl1-patterns": {
+      "source": "XYOracleNetwork/xyo-skills",
+      "sourceType": "github",
+      "skillPath": "skills/xl1-patterns/SKILL.md",
+      "computedHash": "c3cd39d9cb2245a85004971cec14730c067b860b00f76375ead7ff405b84d5b9"
+    },
+    "xl1-testing": {
+      "source": "XYOracleNetwork/xyo-skills",
+      "sourceType": "github",
+      "skillPath": "skills/xl1-testing/SKILL.md",
+      "computedHash": "b4de0435f5f09f04241f35cefd46c515c1f49b30954690c8d5de511c02b281df"
+    },
     "xy-development": {
       "source": "ariestools/ariestools-skills",
       "sourceType": "github",

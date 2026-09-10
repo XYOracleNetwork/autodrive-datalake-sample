@@ -1,7 +1,7 @@
 {
   "name": "@xyo-network/autodrive-datalake-sample",
   "private": true,
-  "description": "Planning-stage sample for selective Auto Drive datalakes with the XYO SDK",
+  "description": "Runnable sample for selective Auto Drive datalakes with the XYO SDK",
   "homepage": "https://github.com/XYOracleNetwork/autodrive-datalake-sample",
   "bugs": {
     "url": "https://github.com/XYOracleNetwork/autodrive-datalake-sample/issues"
@@ -21,19 +21,33 @@
     "check": "xy check --strict --no-defer",
     "compile": "xy compile --no-defer",
     "lint": "xy lint --strict --no-defer",
-    "test": "xy test --no-defer"
+    "start": "pnpm start:sequence",
+    "start:local": "pnpm compile && node packages/server/dist/node/cli.mjs --network local",
+    "start:mainnet": "pnpm compile && node packages/server/dist/node/cli.mjs --network mainnet",
+    "start:sequence": "pnpm compile && node packages/server/dist/node/cli.mjs --network sequence",
+    "test": "xy test --no-defer",
+    "test:sample": "pnpm compile && vitest run --project local-xl1"
   },
   "devDependencies": {
-    "@ariestools/eslint-config-flat": "~10.0.5",
+    "@ariestools/eslint-config-react-flat": "~10.0.5",
+    "@ariestools/sdk": "~8.3.0",
     "@ariestools/toolchain": "~10.0.5",
     "@ariestools/tsconfig": "~10.0.5",
     "@ariestools/vitest-config": "~10.0.5",
-    "@types/node": "~24.13.3",
+    "@opentelemetry/api": "~1.9.1",
+    "@types/node": "~26.5.0",
+    "@xyo-network/dapp-kit-vitest-config": "~2.0.0",
+    "@xyo-network/sdk": "~7.4.1",
+    "@xyo-network/sdk-protocol": "~7.4.2",
+    "@xyo-network/xl1-sdk": "~5.5.3",
+    "async-mutex": "~0.5.0",
     "eslint": "~10.10.0",
     "eslint-import-resolver-typescript": "~4.4.5",
+    "ethers": "~6.17.0",
     "typescript": "~6.0.3",
     "vite": "~8.2.2",
-    "vitest": "~5.0.0"
+    "vitest": "~5.0.0",
+    "zod": "~4.5.4"
   },
   "packageManager": "pnpm@12.3.4",
   "volta": {
