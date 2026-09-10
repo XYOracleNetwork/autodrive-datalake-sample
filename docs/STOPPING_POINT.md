@@ -1,77 +1,83 @@
-# Implementation stopping point
+# Current CLI checkpoint
 
-Date: September 9, 2026. This checkpoint captures the implemented sample and the
-remaining qualification work. Development is paused here; the full product's
-live acceptance criteria are not yet closed.
+Updated September 10, 2026. The CLI supersedes all previous website/server designs.
+This checkpoint accompanies the single-package CLI revision.
 
-## Current behavior
+## Delivered
 
-- Four workspaces implement the neutral protocol, shared browser/test client,
-  Node HTTP service with persistent PGlite admission ledger, and React website.
-- `pnpm start:local`, `pnpm start:sequence`, and `pnpm start:mainnet` select XL1
-  settings in code. `pnpm start` aliases Sequence. Local owns a persistent chain
-  on port 8080 and stops that child on shutdown.
-- Local storage uses real Auto Drive through the published XYO adapter. Set
-  `AUTODRIVE_API_KEY`; the three `ARIES_*` connection values may remain blank.
-  Sequence/Mainnet require an existing configured Aries Auto Drive plane. A
-  complete Aries connection can also override local storage setup.
-- Uploads require explicit write enablement, allowed signers, and count/byte
-  budgets. Credentials remain server-side. `.env.example` documents the setup.
-- The editor displays the entire `{schema, salt, data}` payload. The schema is
-  `com.example.message`; salt is 32 cryptographically random bytes encoded as
-  64 lowercase hex characters. **New salt** preserves data while changing payload
-  identity. Editing, signing, retry, and recovery preserve the approved salt.
-- The shared flow validates and signs one payload, authenticates admission with
-  a wallet JWT, reserves persistent capacity, stores once, verifies fresh
-  read-back, and then permits broadcast. Finality is independently checked;
-  uncertain uploads are reconciled without blindly uploading again.
+- One Node package at the repository root, with `src/`, a `sample-cli` bin,
+  and `dist/node/cli.mjs`. All four former workspace packages and web/server
+  code are removed. No React, HTTP listener, JWT, ledger, or writer lock.
+- `sample-cli "<message>" --autoDriveKey <key>`. One nonempty quoted message is
+  required; provider key precedence is flag, process environment, then `.env`.
+  `AUTODRIVE_BUCKET` is optional. No user seed phrase or XL1 endpoint configuration.
+- AriesTools CLI wallet owns the keys, password prompt, transaction signing,
+  and broadcast. The sample invokes public wallet commands, validates their
+  output, and never reads the wallet store. Provider secrets are removed from
+  child environments and never appear in wallet arguments or audit records.
+- Sequence is the default. `--network mainnet` is explicit. The active wallet
+  network is selected automatically after wallet/account menus. The chosen
+  wallet and network remain active in Aries. Offset `0` is offered when there
+  are no saved accounts; all subsequent commands use the selected offset.
+- A `com.example.message` payload contains `data.message` and a new 256-bit salt
+  per invocation, with a 4,096-byte canonical bound. Signing is verified before
+  storage; exact read-back is required before broadcast and after finality.
+- Exit zero only for verified storage plus finalized inclusion; progress on
+  stderr and result JSON on stdout followed by the transaction explorer URL as
+  the final line after cleanup. Failure never automatically repeats a write
+  or broadcast. Public evidence remains under `.sample/runs/run-*`.
+- The local Auto Drive SDK patch and `patches/` folder were removed at user
+  request. The unmodified published adapter writes zero-byte sequence index
+  files again. Tests verify those indexes and duplicate suppression.
+- README includes installation, provider configuration, Aries wallet setup and
+  funding, interactive runs, explorer output, recovery, and troubleshooting.
 
-## Verified at this checkpoint
+## Verification
 
-Runtime: Node 24.14.1 and pnpm 12.3.4.
+Runtime: Node 24.14.1, pnpm 12.3.4, pinned development Aries CLI 0.1.20.
 
-| Check | Latest result |
+| Command / check | Result |
 | --- | --- |
-| `pnpm check` | Passed |
-| `pnpm build` | Passed, strict lint and dependency validation clean |
-| `pnpm test` | 128 offline tests passed; no provider or chain calls |
-| Selected `pnpm test:sample` tests | Four passed: salted signing/storage/finality flow and three owned-chain lifecycle tests |
-| Compiled-CLI startup tests | Two excluded from the latest run because an existing listener occupied `127.0.0.1:8080`; both passed before the schema/salt changes |
-| Browser | Complete schema/salt visible; salt regeneration, preservation, and rejection checked; 390-pixel layout has no horizontal page overflow or console warnings/errors |
+| `pnpm check` | Passed; single-package CLI profile |
+| `pnpm build --no-incremental` | Passed, zero lint/dependency errors or warnings |
+| `pnpm lint --no-incremental` | Passed, zero errors or warnings |
+| `pnpm test` | 59 offline tests in six files passed |
+| `pnpm test:sample` | Real Aries wallet signing/broadcast and finalized local XL1 flow passed, controlled storage |
+| `pnpm test:live` | Previously passed with the patch; not repeated for this change |
+| `pnpm run sample-cli --help` | Compiled executable prints the requested command contract |
+| Terminal check | Real Aries masked password, wallet menu, invalid-choice retry, nonzero account selection, automatic network switch; Ctrl-C cancellation also verified |
+| CLI errors | Missing/blank/unquoted messages and invalid configuration reject; provider key precedence and subprocess isolation tested |
 
-The latest local-chain selection was:
+Both chain tests import the public dapp-kit genesis mnemonic into a fresh
+isolated Aries wallet, then remove that wallet and stop the disposable chain.
+They never access the user's wallet. Offline adapter tests count all PUTs and
+assert one primary object plus one zero-byte sequence index per new payload.
 
-```sh
-pnpm test:sample --testNamePattern 'authenticates, stores|owned local XL1 process lifecycle'
-```
+The compile script disables incremental skipping so `pnpm start` recompiles
+current source, including new files in an uncommitted checkout. Build and lint
+were explicitly checked without incremental skipping. Frozen installation passed.
 
-Native LMDB required running the opt-in local-chain tests outside the macOS agent
-sandbox. Ordinary terminal execution needs no such exception. Test storage and
-provider transports were controlled. No real Auto Drive upload, public-chain
-transaction, or provider archival confirmation was performed.
+## Previous live evidence (before patch removal and interactive setup)
 
-See [LOCAL_QUALIFICATION.md](LOCAL_QUALIFICATION.md) for the evidence history and
-[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for the remaining milestones.
+- Evidence: `.sample/live/cli-q2ddoc`
+- Payload: `39096bbf0e537eb48a5c3c74f9cdb3b94433602a9f4f42d0d42218a86f487322`
+- Canonical size: **172 bytes**
+- Transaction: `4baceb452af606a1fd2b9e7a14d7cdc251564b655fd1613b29332c60a2bf297a`
+- Disposable chain: `a7969bb9475661edf396cd50165429ea650ad90b`
+- Storage namespace: `autodrive-sample/live-test`
+- One logical provider insertion and one Aries wallet broadcast; exact read-back
+  and finalized inclusion verified. The transaction envelope was absent from Auto Drive.
+- Archival confirmed: **false**. No public-chain transaction was sent.
 
-## Resume here
+## Remaining boundaries
 
-1. Restart the development application to load the latest strict salted-payload
-   contract. Previously signed unsalted payloads cannot be silently migrated;
-   preserve state needed to reconcile any prior operation.
-2. Once the existing port-8080 listener is intentionally stopped, run the complete
-   `pnpm test:sample` suite to revalidate both compiled-CLI startup paths against
-   this checkpoint. Do not adopt or terminate an unrelated listener automatically.
-3. Configure a real provider account and explicitly bounded write settings, then
-   qualify one authorized upload and fresh read-back. Measure latency against the
-   transaction validity window. Keep provider acceptance and archival distinct.
-4. Qualify the installed XL1 Chrome Wallet: connect, correct network/account,
-   origin-bound JWT, approval rejection, signing, broadcast, finalized inclusion,
-   and reload recovery. Local headless signing does not prove this browser flow.
-5. Qualify the existing Aries plane for public profiles, including backend,
-   schema/size policy, public-read access, and credential renewal. Official Aries
-   image composition, live acceptance harnesses, and hosted deployment remain
-   outstanding; Mainnet has not been live-qualified.
+The normal CLI requires an interactive terminal, an existing Aries wallet, and
+funds on the chosen network. It drives unlock and wallet/account/network selection. Public Sequence/Mainnet execution was not performed;
+local-chain success is not public-chain qualification. Provider archival completion
+and cross-process atomic deduplication remain unproven. No automatic recovery
+command is included: inspect retained signed evidence after uncertainty, because
+rerunning the message generates another salt.
 
-The temporary browser-verification server has been stopped. The pre-existing
-development application was left running. Local `.env`, runtime ledgers, chain
-data, logs, and generated build output are excluded from version control.
+The upstream primary-only changes in `sdk-xyo-client-js` remain uncommitted and
+unpublished; the sample no longer consumes those changes or a local patch.
+Earlier SDK package/full-suite results and web/server evidence are preserved in LOCAL_QUALIFICATION.md.

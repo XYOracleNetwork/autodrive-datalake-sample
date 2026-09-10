@@ -29,5 +29,5 @@ jobs:
         run: pnpm build
       - name: Run offline tests
         run: pnpm test
-      - name: Run local XL1 sample flow
+      - name: Run local XL1 flow with isolated Aries wallet
         run: pnpm test:sample

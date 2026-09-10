@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 
-import { recommendedConfig } from '@ariestools/eslint-config-react-flat'
+import { recommendedConfig } from '@ariestools/eslint-config-flat'
 import type { Linter } from 'eslint'
 import { includeIgnoreFile } from 'eslint/config'
 

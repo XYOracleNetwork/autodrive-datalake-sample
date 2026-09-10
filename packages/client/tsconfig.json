@@ -1,6 +1,0 @@
-{
-  "extends": "@ariestools/tsconfig-dom",
-  "compilerOptions": { "types": [] },
-  "include": ["src", "*.config.ts"],
-  "exclude": ["node_modules", "dist"]
-}

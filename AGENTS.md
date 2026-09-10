@@ -1,17 +1,20 @@
 # Development guidance
 
-This repository is a private sample under implementation. Read `PRD.md` and
-`docs/IMPLEMENTATION_PLAN.md` before implementing product behavior.
+This repository is one private Node CLI sample. Read PRD.md and
+`docs/IMPLEMENTATION_PLAN.md` before changing behavior.
 
-- Use Node 24 and the pinned pnpm version. Run all `xy` commands from the root.
-- Use `pnpm check`, `pnpm build`, and `pnpm test` for the repository gates.
-- Keep the protocol package environment-neutral, the client and web packages browser-compatible,
-  and the server package Node-only. Give each implemented package its own runtime config.
-- Preserve unrelated work and use conventional commits. Do not rewrite Git history.
-- Keep credentials server-side and out of tracked files. Ordinary tests must not
-  contact Auto Drive or a chain. Live tests require a separate explicit command.
-- Never report a provider receipt as archival confirmation or an unimplemented
-  flow as successful. Keep local-chain, controlled-storage, and live-provider evidence distinct.
-- `pnpm test:sample` explicitly starts the disposable local XL1 chain through
-  dapp-kit's Vitest installer. It must not contact Auto Drive or a public chain.
-- Do not restore `passWithNoTests`; implemented behavior must supply meaningful tests.
+- Use Node 24 and pinned pnpm. Run root `pnpm check`, `pnpm build`, and `pnpm test`.
+- Keep one Node package. Use the public AriesTools CLI wallet for signing and
+  broadcast; never load user seed phrases or private keys into the sample.
+- Require one quoted message. `--autoDriveKey` overrides `AUTODRIVE_API_KEY`
+  from the environment or `.env`. Never log or forward provider secrets to the wallet.
+- Ordinary tests are offline. `pnpm test:sample` uses dapp-kit local XL1, an
+  isolated Aries wallet, and controlled storage. Never touch the user's wallet.
+- `pnpm test:live` explicitly writes one bounded real Auto Drive payload on the
+  disposable local-chain path. No retries, public-chain writes, or default CI inclusion.
+- Require fresh storage read-back before broadcast and finalized inclusion before
+  success. Provider read-back is not completed archival.
+- Retain public evidence for uncertain operations. No ledger, writer lock,
+  automatic re-upload, or automatic rebroadcast.
+- Preserve unrelated work; use conventional commits; never rewrite Git history.
+- Do not restore `passWithNoTests`.
