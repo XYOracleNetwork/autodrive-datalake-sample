@@ -27,8 +27,8 @@ pnpm install --frozen-lockfile
 pnpm build
 ```
 
-If you already have a checkout, start with `cd` into that directory. This is a
-private repository, so cloning requires access through your GitHub account.
+If you already have a checkout, start with `cd` into that directory. This
+repository is public and can be cloned without GitHub authentication.
 
 The development dependencies include **AriesTools CLI 0.1.20**. Use the project's
 CLI for wallet setup so setup and the sample use the same version:
