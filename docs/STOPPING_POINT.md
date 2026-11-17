@@ -1,3 +1,8 @@
+---
+kind: spec
+state: active
+---
+
 # Current CLI checkpoint
 
 Updated September 10, 2026. The CLI supersedes all previous website/server designs.
