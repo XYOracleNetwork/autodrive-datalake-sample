@@ -1,3 +1,7 @@
+---
+kind: evidence
+---
+
 # Historical qualification record
 
 The single-package CLI supersedes the browser/server designs below. These are

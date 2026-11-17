@@ -7,6 +7,12 @@
       "skillPath": "skills/ariestools-sdk/SKILL.md",
       "computedHash": "cf16e71f5a00e0ce504d815d702eac71ecc723994ea69ee3542822ef2de4b794"
     },
+    "xl1-dapp-kit": {
+      "source": "XYOracleNetwork/xyo-skills",
+      "sourceType": "github",
+      "skillPath": "skills/xl1-dapp-kit/SKILL.md",
+      "computedHash": "654361c68d172b9a86bc0594d469961a3db9be873862d7ce250e3ae105f2cb23"
+    },
     "xl1-knowledge": {
       "source": "XYOracleNetwork/xyo-skills",
       "sourceType": "github",

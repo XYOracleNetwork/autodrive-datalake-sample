@@ -1,3 +1,8 @@
+---
+kind: plan
+state: active
+---
+
 # Single-package Node CLI plan
 
 Updated September 10, 2026. The CLI replaces all previous browser/server designs.

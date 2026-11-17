@@ -30,17 +30,17 @@
   "devDependencies": {
     "@ariestools/cli": "~0.1.20",
     "@ariestools/eslint-config-flat": "~10.0.5",
-    "@ariestools/toolchain": "~10.0.5",
+    "@ariestools/toolchain": "~10.3.1",
     "@ariestools/tsconfig": "~10.0.5",
-    "@ariestools/vitest-config": "~10.0.5",
-    "@aws-sdk/client-s3": "~3.1128.0",
+    "@ariestools/vitest-config": "~10.3.1",
+    "@aws-sdk/client-s3": "~3.1161.0",
     "@types/node": "~26.5.0",
-    "@xyo-network/dapp-kit-vitest-config": "~2.0.0",
+    "@xyo-network/dapp-kit-vitest-config": "~3.2.8",
     "eslint": "~10.10.0",
     "eslint-import-resolver-typescript": "~4.4.5",
     "typescript": "~6.0.3",
-    "vite": "~8.2.2",
-    "vitest": "~5.0.0"
+    "vite": "~8.3.8",
+    "vitest": "~5.1.0"
   },
   "version": "0.1.0",
   "bin": {
@@ -52,17 +52,17 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@ariestools/sdk": "~8.3.0",
+    "@ariestools/sdk": "~9.0.3",
     "@noble/hashes": "~2.4.0",
-    "@opentelemetry/api": "~1.9.1",
-    "@xyo-network/archivist-s3": "~7.4.1",
-    "@xyo-network/dapp-kit": "~2.0.0",
-    "@xyo-network/sdk": "~7.4.1",
-    "@xyo-network/sdk-protocol": "~7.4.2",
-    "@xyo-network/xl1-sdk": "~5.5.3",
+    "@opentelemetry/api": "~1.10.0",
+    "@xyo-network/archivist-s3": "~8.1.2",
+    "@xyo-network/dapp-kit": "~3.2.8",
+    "@xyo-network/sdk": "~8.1.2",
+    "@xyo-network/sdk-protocol": "~8.0.4",
+    "@xyo-network/xl1-sdk": "~5.8.12",
     "async-mutex": "~0.5.0",
     "ethers": "~6.17.0",
-    "zod": "~4.5.4"
+    "zod": "~4.6.7"
   },
   "devEngines": {
     "runtime": {
