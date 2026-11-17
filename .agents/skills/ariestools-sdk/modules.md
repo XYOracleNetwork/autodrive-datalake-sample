@@ -1,21 +1,21 @@
 # Umbrella modules (`@ariestools/sdk`)
 
-Modules live under the monolith source tree (`packages/sdk/src/modules/`) and are published as root re-exports plus **subpath exports**. Prefer subpaths when the import set is small or when documenting intent.
+Modules live under the monolith source tree (`packages/sdk/src/modules/`) and are published as root re-exports plus **subpath exports**. Import from the root `@ariestools/sdk` by default. Treat the subpaths as a catalog of types and stateless functions, not as the preferred style: every entry is a separate bundle, so a class or module state reached through a subpath is a different object from the root's. See [conventions.md](conventions.md#import-style).
 
 ## Install and import
 
 ```sh
-pnpm add @ariestools/sdk
+pnpm add @ariestools/sdk zod @opentelemetry/api
 ```
+
+`@opentelemetry/api` (^1.9) is a required peer: the root barrel loads `@ariestools/telemetry`, which imports it. `zod` (^4.6) is declared an optional peer, but the root barrel, `/hex`, `/object` and `/zod` import it at load, so install it with the umbrella. Peer details are in [overview.md](overview.md#peers-and-side-dependencies).
 
 ```ts
-import { assertEx } from '@ariestools/sdk/assert'
-import { delay } from '@ariestools/sdk/delay'
-import { fetchJson } from '@ariestools/sdk/fetch'
-import type { ApiConfig } from '@ariestools/sdk/api/model'
+import { assertEx, delay, fetchJson } from '@ariestools/sdk'
+import type { ApiConfig, Hex, Promisable } from '@ariestools/sdk/model'
 ```
 
-Many modules also publish a `./<name>/model` subpath for types-only imports.
+`@ariestools/sdk/model` aggregates every module's types. Per-module `./<name>/model` subpaths (types only) exist for api, assert, base, creatable, enum, error, events, fetch, forget, hex, object, profile, promise, retry, storage, telemetry, typeof and zod. Other modules have none; `@ariestools/sdk/logger/model`, for example, does not resolve.
 
 ## Module catalog
 
@@ -25,7 +25,7 @@ Many modules also publish a `./<name>/model` subpath for types-only imports.
 | `array` | `@ariestools/sdk/array` | Array utilities |
 | `arraybuffer` | `@ariestools/sdk/arraybuffer` | ArrayBuffer helpers |
 | `assert` | `@ariestools/sdk/assert` | `assertEx`, `assertDefinedEx` — throw on invalid state |
-| `base` | `@ariestools/sdk/base` | Base types / shared foundations |
+| `base` | `@ariestools/sdk/base` | `Base` class (logger + OTel providers, `Base.defaultLogger`), `globallyUnique`, `initDefaultLogger` |
 | `creatable` | `@ariestools/sdk/creatable` | Creatable instance patterns |
 | `decimal-precision` | `@ariestools/sdk/decimal-precision` | Decimal / precision helpers |
 | `delay` | `@ariestools/sdk/delay` | `delay(ms)` promise sleep |
@@ -35,69 +35,103 @@ Many modules also publish a `./<name>/model` subpath for types-only imports.
 | `events` | `@ariestools/sdk/events` | Event emitter style helpers |
 | `exists` | `@ariestools/sdk/exists` | `exists` type guard for `filter(exists)` |
 | `fetch` | `@ariestools/sdk/fetch` | `fetchJson`, `FetchClient`, compress/error helpers — see [fetch.md](fetch.md) |
-| `forget` | `@ariestools/sdk/forget` | Fire-and-forget promises (node variants under forget/node) |
+| `forget` | `@ariestools/sdk/forget` | `forget(promise, config?)`, `ForgetPromise`. The published entry is the Node-capable variant on all platforms; `terminateOnException`/`terminateOnTimeout` (default false) call `process.exit`, so leave them off in browser or library code. There is no `/forget/node` subpath |
 | `function-name` | `@ariestools/sdk/function-name` | Function display names |
 | `geo` | `@ariestools/sdk/geo` | Geo helpers |
-| `hex` | `@ariestools/sdk/hex` | Hex strings, hashes, address helpers, optional zod |
-| `logger` | `@ariestools/sdk/logger` | `ConsoleLogger`, level/silent loggers |
-| `object` | `@ariestools/sdk/object` | Object helpers (prefer non-deprecated exports) |
-| `platform` | `@ariestools/sdk/platform` | Platform detection (node/browser conditional) |
+| `hex` | `@ariestools/sdk/hex` | Hex/hash/address/EthAddress helpers and Zod schemas — requires `zod` ^4.6 (imported at load) |
+| `logger` | `@ariestools/sdk/logger` | `ConsoleLogger`, `LevelLogger`, `SilentLogger`, `IdLogger`, `parseLogLevel` |
+| `object` | `@ariestools/sdk/object` | Object helpers (`asAnyObject`, `AsObjectFactory`, `deepMerge`, `omitBy`/`pickBy`, JsonObject helpers, `toSafeJson`, `AnyObject`/`EmptyObject` types) — requires `zod`; `isType` is in `/typeof` |
+| `platform` | `@ariestools/sdk/platform` | `isNode` / `isBrowser` / `isWebworker` (node/browser conditional); `subtle` only from the node and neutral entries |
 | `profile` | `@ariestools/sdk/profile` | Lightweight profiling hooks |
 | `promise` | `@ariestools/sdk/promise` | `PromiseEx`, `fulfilled` / `rejected`, `toPromise` |
-| `retry` | `@ariestools/sdk/retry` | Retry helpers |
+| `retry` | `@ariestools/sdk/retry` | `retry(fn, config?)` — re-runs on an incomplete result, not on exceptions (see below) |
 | `set` | `@ariestools/sdk/set` | Set utilities |
 | `static-implements` | `@ariestools/sdk/static-implements` | Static implements pattern |
-| `storage` | `@ariestools/sdk/storage` | `KeyValueStore` and storage **interfaces** |
+| `storage` | `@ariestools/sdk/storage` | `KeyValueStore` / `ReadonlyKeyValueStore` **interfaces** |
 | `telemetry` | `@ariestools/sdk/telemetry` | **Deprecated re-export path** — prefer `@ariestools/telemetry` |
-| `telemetry-exporter` | `@ariestools/sdk/telemetry-exporter` | Exporter helpers (prefer dedicated telemetry package for new code) |
+| `telemetry-exporter` | `@ariestools/sdk/telemetry-exporter` | **Deprecated re-export path** — use `@ariestools/telemetry` (`createXyConsoleSpanExporter`, `spanDurationInMillis`) |
 | `timer` | `@ariestools/sdk/timer` | Timers |
-| `typeof` | `@ariestools/sdk/typeof` | Runtime type checks, branding, `is` / `ifTypeOf` |
+| `typeof` | `@ariestools/sdk/typeof` | `is*` guards (`isDefined`, `isString`, `isObject`, …), `typeOf`, `ifTypeOf`, `ifDefined`, `Brand` |
 | `url` | `@ariestools/sdk/url` | URL helpers (node/browser conditional entry) |
-| `zod` | `@ariestools/sdk/zod` | Zod helpers — requires optional peer `zod` |
+| `zod` | `@ariestools/sdk/zod` | Zod factories (`zodIsFactory`, `zodAsFactory`, `zodToFactory`, `zodAllFactory`, async variants) — requires `zod` ^4.6 |
 
 The published `exports` map is the source of truth if this table drifts; inspect `packages/sdk/package.json` in `sdk-js` or the installed package on disk.
+
+Take classes and module state only from the root: `ApiClient`, `Base` / `initDefaultLogger`, `AbstractCreatable`, `BaseEmitter` / `Events`, `ForgetPromise`, the logger classes, `PromiseEx` and `TimerScheduler`.
 
 ## High-traffic patterns
 
 ### Assert and exists
 
 ```ts
-import { assertEx } from '@ariestools/sdk/assert'
-import { exists } from '@ariestools/sdk/exists'
+import { assertEx, exists } from '@ariestools/sdk'
 
 const value = assertEx(maybe, () => 'missing value')
 const items = list.filter(exists)
 ```
 
+`assertEx` throws on `undefined`, `null`, `false`, `0`, `''` and `0n`; `NaN` passes and is returned unchanged. Use `assertDefinedEx` when `0`, `''` or `false` are valid values. Always pass a function (`() => 'msg'` or `() => new MyError()`), never a string.
+
 ### Delay and retry
 
 ```ts
-import { delay } from '@ariestools/sdk/delay'
-import { retry } from '@ariestools/sdk/retry'
+import { delay, retry } from '@ariestools/sdk'
 
 await delay(100)
-await retry(async () => doWork(), { /* options per package API */ })
+const value = await retry(async () => {
+  try {
+    return await fetchMaybe()
+  } catch {
+    return undefined // incomplete, so retry
+  }
+}, { retries: 3, interval: 100, backoff: 2 })
 ```
+
+`retry` re-runs on an incomplete result, not on exceptions: a thrown error propagates from the first attempt, so catch inside and return `undefined` to trigger a retry. A result is complete when it is not `undefined`; pass `complete: (result) => boolean` to change that. The default is 0 retries, and exhaustion returns `undefined`. A `void` function is never complete, so `retries: N` runs it N + 1 times even when every attempt succeeds.
 
 ### Forget (async side effects)
 
 Use forget helpers when intentionally not awaiting a promise. Prefer explicit error handling at boundaries; do not use forget to hide production failures.
 
+```ts
+import { forget, ForgetPromise } from '@ariestools/sdk'
+
+forget(sendMetrics(), {
+  name: 'metrics',
+  onComplete: ([, error]) => {
+    if (error) logger.warn(error)
+  },
+})
+
+// before process exit and in test teardown
+await ForgetPromise.awaitInactive()
+```
+
+- Import from the root: `ForgetPromise` holds static state (`activeForgets`), and the `/forget` subpath has its own copy.
+- A rejection is logged and delivered to `onComplete([undefined, error])`. `onException` covers only errors thrown during synchronous setup.
+- The default `timeout` is 30 s. It only notifies (`onCancel` plus a logged error); the work keeps running.
+- `ForgetPromise.awaitInactive(interval?, timeout?)` resolves `0` once every forgotten promise settles, or the number still running when `timeout` elapses.
+- Process-wide defaults go in `globalThis.xy.forget.config`; per-call config overrides them.
+
 ### Hex and addresses
 
 ```ts
-import { /* hex helpers */ } from '@ariestools/sdk/hex'
+import {
+  hexToBigInt, isEthAddress, isHash, isHex, toAddress, toEthAddress, toHex,
+} from '@ariestools/sdk'
 ```
 
-For a focused ETH address package, `@ariestools/eth-address` remains available — see [packages.md](packages.md).
+`Hex`, `Hash` and `Address` are unprefixed (`isHex('0xff')` is false by default); `EthAddress` is `0x`-prefixed. The branded `EthAddress` type, `toEthAddress` / `isEthAddress` / `asEthAddress` and `EthAddressZod` all live in this module. `@ariestools/eth-address` adds only `EthAddressWrapper` (bigint parse and compare, EIP-55 checksum) and `padHex`, and it pulls in `ethers` — see [packages.md](packages.md).
 
 ### Storage interfaces vs adapters
 
-`@ariestools/sdk/storage` defines store contracts (e.g. key-value). **Implementations** for IndexedDB and Mongo live in `@ariestools/storage-adapters`. Do not assume Mongo or IndexedDB ship inside the umbrella alone.
+`@ariestools/sdk/storage` holds the `KeyValueStore` / `ReadonlyKeyValueStore` contracts. `IndexedDbKeyValueStore` (`@ariestools/storage-adapters/indexed-db`) implements them. `@ariestools/storage-adapters/mongo` provides `BaseMongoSdk` / `MongoClientWrapper` for Mongo access. Neither backend ships inside the umbrella — see [packages.md](packages.md).
 
 ## Platform-conditional modules
 
-`platform` and `url` use conditional package exports (`node` / `browser` / default neutral). Depend on the published subpath and let the bundler or Node resolution pick the right entry. Do not import deep `dist/node/...` paths by hand.
+`platform` and `url` use conditional package exports (`node` / `browser` / default neutral). When you need the platform-specific entry, import the `/platform` or `/url` subpath (stateless, so a subpath is fine) and let the bundler or Node resolution pick it. Do not import deep `dist/node/...` paths by hand.
+
+`subtle` is exported only under the `node` and default conditions; browser builds get `isNode` / `isBrowser` / `isWebworker` only, so use `globalThis.crypto.subtle` there. The root barrel is the same bundle under every condition and carries the neutral, runtime-detecting variants.
 
 ## Discovering APIs
 

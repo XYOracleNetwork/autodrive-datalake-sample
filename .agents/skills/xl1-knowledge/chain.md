@@ -42,11 +42,18 @@ interface BlockBoundWitness extends BoundWitness {
   previous: Hash | null        // Previous block hash (null for genesis)
   protocol?: number            // Protocol version
   step_hashes?: Hash[]         // Step checkpoint hashes
+  supersedes?: Hash            // Signed hash of the same-height candidate this block replaces
 
-  // Block metadata ($ prefix, excluded from _dataHash):
-  $epoch: number               // Epoch timestamp (milliseconds)
+  // Optional unsigned client meta ($ prefix, excluded from _dataHash). Not the clock.
+  $epoch?: number
 }
 ```
+
+`supersedes` is a signed field on purpose: it is what separates an honest
+re-proposal at the same height from double-signing, so a producer cannot add or
+drop it after signing.
+
+The block clock is the signed `network.xyo.time` payload elevated into the block (`epoch` in milliseconds). Read it with `timePayloadOfBlock` / `epochOfBlock` from `@xyo-network/xl1-sdk`. `$epoch` is leftover client meta: producers no longer write it, and nothing that gates (qualification, finality, head selection) should accept it. `epochOfBlock` falls back to `$epoch` only so reads over pre-time-payload history keep working.
 
 ### Hydrated Blocks
 
@@ -56,7 +63,7 @@ Blocks are tuples pairing the BoundWitness with its resolved payloads:
 type HydratedBlock = [BlockBoundWitness, Payload[]]
 ```
 
-9 type variants exist, combining signing state (`Signed` / `Unsigned` / default) with metadata (`WithHashMeta` / `WithStorageMeta` / plain). The naming is predictable: `SignedHydratedBlockWithHashMeta`, etc. Gateway viewer methods typically return `SignedHydratedBlockWithHashMeta`.
+7 type variants exist: `HydratedBlock` and `SignedHydratedBlock`, each plain or with `WithHashMeta` / `WithStorageMeta`, plus the JSON wire form `SignedHydratedBlockToJson`. There are no `Unsigned` block variants (transactions have them; see [Development — Hydrated Types](development.md#hydrated-types)). Gateway viewer methods typically return `SignedHydratedBlockWithHashMeta`. Hydration is shallow: a viewer fills `Payload[]` only from the gateway's own payload store — a block's transaction bound witnesses and on-chain payloads — never with the off-chain bodies those transactions reference, which come from a datalake by hash (see [Gateway — What `block.blockByNumber` returns](gateway.md#what-blockblockbynumber-and-friends-returns--hydration-is-shallow)).
 
 ---
 
@@ -74,6 +81,23 @@ interface TransactionBoundWitness extends BoundWitness {
   script?: string[]            // Optional elevation script commands
 }
 ```
+
+### `from` is the author
+
+`from` must be a valid address listed in the transaction's `addresses`
+(`TransactionFromValidator`), so it is always one of the transaction's signers.
+It is the structural author of every payload the transaction carries or
+references: read the actor from `tx[0].from` on a validated transaction, never
+from a `from` / `owner` / `author` field inside an application payload. This is
+XYO's structural-authorship rule applied to XL1 — see
+[Declarative Payloads, Structural Authorship](../xyo-knowledge/best-practices.md#declarative-payloads-structural-authorship).
+
+The chain's own `network.xyo.transfer` payload (`from`, `epoch`, `transfers`,
+optional `context`) is a protocol-owned exception: its `from` names the account
+being debited, which need not be the signer. The transfer-authorization
+validator (`TransactionTransfersValidatorFactory`) accepts it only when
+`tx.from` is authorized for that address — by default, only the address itself.
+Do not copy that shape into application payloads.
 
 ### Transaction Fees
 
@@ -113,9 +137,9 @@ XL1 uses **AttoXL1** as the base unit (like wei in Ethereum). All on-chain amoun
 | Blocks per step | 1,000,000 |
 | Step decay | 5% reduction per step (multiply by 95/100) |
 | Minimum reward | 10 XL1 (10 × 10^18 AttoXL1) |
-| Creator reward | 20,000,000,000 XL1 (20,000,000,000 × 10^18 AttoXL1) per block (fixed) |
+| Creator reward | 20,000,000,000 XL1 (20,000,000,000 × 10^18 AttoXL1), paid once — genesis block 0 only |
 
-Formula: `reward(step) = max(startingReward × (95/100)^step, minReward)` where `step = floor(blockNumber / 1,000,000)`
+Formula (every block after genesis): `reward(step) = max(startingReward × (95/100)^step, minReward)` where `step = floor(blockNumber / 1,000,000)`. `rewardFromBlockNumber(0)` returns the creator reward instead.
 
 Integer arithmetic only — numerator 95, denominator 100, no floating point.
 
@@ -173,7 +197,7 @@ Consequently **`ChainId` is a function of block height.** Every
 `BlockBoundWitness` records the `chain` in force at its height, so the chain id
 at block `n` is the `chain` field of block `n`.
 
-The chain-contract viewer exposes the fork lineage:
+The chain-contract viewer (`ChainContractViewer`) exposes the fork lineage. It is **not** on the typed `connection.viewer` — dApp code gets the chain id at a height from `connection.viewer.chainId(n)` / `.block.chainId(n)`; the lineage methods below are reachable only through a provider locator in node/server-side code (see [Gateway — Chain ID](gateway.md#chain-id--connectionviewerchainid--blockchainid)):
 - `chainId()` — the current (tip) chain id.
 - `chainIdAtBlockNumber(n | 'latest')` — the id authoritative at height `n`, walking the fork lineage. The canonical height→id lookup.
 - `forkedAtBlockNumber()` / `forkedAtHash()` — where this chain forked from its parent (null on the genesis chain).
@@ -184,4 +208,5 @@ Because a given height's id is fixed forever, any commitment bound to a
 finalized block height — an anchored transaction, a checkpoint, an application
 state hash — stays stable and independently verifiable across all future forks.
 When you stamp a height-bound artifact with a chain id, resolve it *at that
-height* (`chainIdAtBlockNumber(height)`), never with a bare "current chain id".
+height* (`connection.viewer.chainId(height)`, or `chainIdAtBlockNumber(height)`
+server-side), never with a bare "current chain id".

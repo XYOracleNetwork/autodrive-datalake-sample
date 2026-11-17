@@ -5,43 +5,43 @@
       "source": "ariestools/ariestools-skills",
       "sourceType": "github",
       "skillPath": "skills/ariestools-sdk/SKILL.md",
-      "computedHash": "cf16e71f5a00e0ce504d815d702eac71ecc723994ea69ee3542822ef2de4b794"
+      "computedHash": "1422a6b2ae7988cf59f42ac2b9fcb978b832a751dd24fd8af3d38900cf84e32f"
     },
     "xl1-knowledge": {
       "source": "XYOracleNetwork/xyo-skills",
       "sourceType": "github",
       "skillPath": "skills/xl1-knowledge/SKILL.md",
-      "computedHash": "54cd317e5cf3266bca93538298a9defaf98f555b839c1edba019a3710664d6ad"
+      "computedHash": "0beed77f0cec9813e42fbcca527eb783b0e01f3ac1c824428f76e07e02b95e67"
     },
     "xl1-patterns": {
       "source": "XYOracleNetwork/xyo-skills",
       "sourceType": "github",
       "skillPath": "skills/xl1-patterns/SKILL.md",
-      "computedHash": "c3cd39d9cb2245a85004971cec14730c067b860b00f76375ead7ff405b84d5b9"
+      "computedHash": "de3bbedc4421174c1d697931299f69aa469b9da3ae9f114da45235f56f200644"
     },
     "xl1-testing": {
       "source": "XYOracleNetwork/xyo-skills",
       "sourceType": "github",
       "skillPath": "skills/xl1-testing/SKILL.md",
-      "computedHash": "b4de0435f5f09f04241f35cefd46c515c1f49b30954690c8d5de511c02b281df"
+      "computedHash": "fe55cb888f90672b0a9510a019272be58d313a806a9e7ab5a3e557b21511693c"
     },
     "xy-development": {
       "source": "ariestools/ariestools-skills",
       "sourceType": "github",
       "skillPath": "skills/xy-development/SKILL.md",
-      "computedHash": "467dced44631261144795306a6387e3d72daaef43be229fc1a90fa973104f547"
+      "computedHash": "d098d59eb80580abf1bbcf494d5b13218f2c973a8d1dcde229c7ade93d72a6f2"
     },
     "xy-toolchain": {
       "source": "ariestools/ariestools-skills",
       "sourceType": "github",
       "skillPath": "skills/xy-toolchain/SKILL.md",
-      "computedHash": "4beee24c7e6d658b13b9262aac1b4a4051d90845b11b7d99de3f3d2e8f03d0f5"
+      "computedHash": "e7d614a1cc3be68458e3f7df681ddb7cc76c6f5b8efa7670ce716f0e5465b2a9"
     },
     "xyo-knowledge": {
       "source": "XYOracleNetwork/xyo-skills",
       "sourceType": "github",
       "skillPath": "skills/xyo-knowledge/SKILL.md",
-      "computedHash": "1518e80502d0b72a6a8ea07f82fd795f41a3d2289a8006acdd21bd26f5b298dc"
+      "computedHash": "63c31a9618f8f1a14a1dda0c03cdd053756378a6214cb41c09a5191d1952e9d6"
     }
   }
 }

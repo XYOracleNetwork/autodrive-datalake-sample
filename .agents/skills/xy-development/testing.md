@@ -1,20 +1,20 @@
 # Testing Principles
 
-These are framework-agnostic testing principles. Specific frameworks, runners, and tooling configuration are defined in the XY Toolchain skill (Layer 2).
+These are framework-agnostic testing principles. Specific frameworks, runners, spec layout, and tooling configuration are defined in the xy-toolchain skill ([Testing with Vitest](../xy-toolchain/testing.md)).
 
 ## Test Naming
 
 Describe **what behavior is expected**, not how it's implemented.
 
 Good:
-- `should reject moves after game is finalized`
-- `should return the winner when both players have submitted`
+- `rejects moves after the game is finalized`
+- `returns the winner when both players have submitted`
 
 Avoid:
 - `test processMove function`
 - `test line 42 branch`
 
-The test name should read like a specification. When a test fails, its name should tell you what broke without reading the test body.
+The test name should read like a specification. When a test fails, its name should tell you what broke without reading the test body. Match the repository's existing title style; what matters is that the title states the expected behavior.
 
 ## Test Structure: Arrange / Act / Assert
 
@@ -42,6 +42,17 @@ Tests should exercise the **public API** of a module, not its internals.
 
 This makes tests resilient to refactoring — the implementation can change without breaking tests as long as the behavior is preserved.
 
+## Independent and Deterministic Tests
+
+Every test must pass on its own, in any order, on every run.
+
+- Each test arranges its own state and cleans up after itself. Never rely on another test having run first.
+- Other test files may run at the same time. Never assume exclusive access to ports, temp paths, databases, environment variables, or a shared chain; give each test its own resources or unique names.
+- Control the clock, randomness, and network so the result does not depend on timing or outside services.
+- Keep slow, stateful end-to-end suites separate from unit tests.
+
+Realm routing (Node vs browser) and serialized end-to-end suites are covered in [xy-toolchain → Testing with Vitest](../xy-toolchain/testing.md).
+
 ## Mocking: Minimal and Intentional
 
 Mocks are a tool, not a default. Writing a test that mocks everything it touches proves nothing — it only tests that your mocks behave the way you told them to.
@@ -50,6 +61,8 @@ Mocks are a tool, not a default. Writing a test that mocks everything it touches
 - External services (network calls, third-party APIs) that are slow, flaky, or have side effects
 - System boundaries you don't control (file system, clock, randomness) when determinism matters
 - Expensive resources that would make the test suite impractically slow
+
+Mocking a boundary in unit tests is fine, but keep at least one integration or end-to-end test that exercises the real wiring across it. Orchestration that is mocked in every test is untested.
 
 **When mocks are not appropriate:**
 - Internal modules and utilities — test with the real implementation

@@ -20,7 +20,7 @@ CREATE ──► COMMIT ──► REVEAL ──► SETTLE ──► CLOSED
   │          │          │          │
   │          │          │          └─ Winnings distributed
   │          │          └─ Choices verified against commits
-  │          └─ Players submit hash(prediction + salt)
+  │          └─ Players submit hash(committer + marketId + prediction + salt)
   └─ Market created with question, options, deadlines
 ```
 
@@ -42,8 +42,8 @@ Define a schema for each phase of the lifecycle. Validity windows reuse `BlockDu
 ```ts
 import { asSchema, PayloadZodLooseOfSchema } from '@xyo-network/sdk'
 import { BlockDurationZod } from '@xyo-network/xl1-sdk'
-import { zodIsFactory, zodAsFactory, zodToFactory } from '@ariestools/sdk'
-import * as z from 'zod/mini'
+import { zodAsFactory, zodIsFactory } from '@ariestools/sdk'
+import { z } from 'zod/mini'
 
 // --- Market Definition ---
 
@@ -74,6 +74,7 @@ export const MarketPayloadZod = z.extend(PayloadZodLooseOfSchema(MarketSchema), 
 
 export type MarketPayload = z.infer<typeof MarketPayloadZod>
 export const isMarketPayload = zodIsFactory(MarketPayloadZod)
+export const asMarketPayload = zodAsFactory(MarketPayloadZod, 'asMarketPayload')
 
 // --- Market Commit (extends the generic commit with market-specific fields) ---
 
@@ -82,12 +83,13 @@ export const MarketCommitSchema = asSchema('com.example.market.commit', true)
 export const MarketCommitPayloadZod = z.extend(PayloadZodLooseOfSchema(MarketCommitSchema), {
   /** References the market this commit belongs to */
   marketId: z.string(),
-  /** hash(prediction + salt) */
+  /** hash(committer + marketId + prediction + salt) — see commit-reveal.md */
   commitment: z.string(),
 })
 
 export type MarketCommitPayload = z.infer<typeof MarketCommitPayloadZod>
 export const isMarketCommitPayload = zodIsFactory(MarketCommitPayloadZod)
+export const asMarketCommitPayload = zodAsFactory(MarketCommitPayloadZod, 'asMarketCommitPayload')
 
 // --- Market Reveal ---
 
@@ -103,6 +105,7 @@ export const MarketRevealPayloadZod = z.extend(PayloadZodLooseOfSchema(MarketRev
 
 export type MarketRevealPayload = z.infer<typeof MarketRevealPayloadZod>
 export const isMarketRevealPayload = zodIsFactory(MarketRevealPayloadZod)
+export const asMarketRevealPayload = zodAsFactory(MarketRevealPayloadZod, 'asMarketRevealPayload')
 
 // --- Market Settlement (lean outcome) ---
 
@@ -116,6 +119,7 @@ export const MarketSettlementPayloadZod = z.extend(PayloadZodLooseOfSchema(Marke
 
 export type MarketSettlementPayload = z.infer<typeof MarketSettlementPayloadZod>
 export const isMarketSettlementPayload = zodIsFactory(MarketSettlementPayloadZod)
+export const asMarketSettlementPayload = zodAsFactory(MarketSettlementPayloadZod, 'asMarketSettlementPayload')
 
 // --- Optional: Market Results View (non-authoritative cache) ---
 //
@@ -137,6 +141,7 @@ export const MarketResultsViewPayloadZod = z.extend(PayloadZodLooseOfSchema(Mark
 
 export type MarketResultsViewPayload = z.infer<typeof MarketResultsViewPayloadZod>
 export const isMarketResultsViewPayload = zodIsFactory(MarketResultsViewPayloadZod)
+export const asMarketResultsViewPayload = zodAsFactory(MarketResultsViewPayloadZod, 'asMarketResultsViewPayload')
 ```
 
 **Schema notes:**
@@ -151,15 +156,15 @@ export const isMarketResultsViewPayload = zodIsFactory(MarketResultsViewPayloadZ
 
 ## Validation Gates
 
-Each phase has a distinct validation responsibility. Treating them as separate gates — rather than scattering checks inline — keeps the contract for each transition explicit and lets a settler re-run earlier gates rigorously without trusting the caller. This is the same discipline the XYO/XNS escrow flow enforces with its three-tier validators.
+Each phase has a distinct validation responsibility. Treating them as separate gates — rather than scattering checks inline — keeps the contract for each transition explicit and lets a settler re-run earlier gates rigorously without trusting the caller. This is the same discipline the XYO/XNS escrow flow enforces with the validators that ship beside its `network.xyo.escrow.terms` payload in `@xyo-network/payload-plugins/payment`.
 
 | Gate | Runs at | Checks |
 |------|---------|--------|
 | **Commit gate** | Before submitting a `MarketCommitPayload` | Market exists; `current ∈ [market.commit.nbf, market.commit.exp)`; participant has not already committed; (if staked) participant has stake available |
-| **Reveal gate** | Before submitting a `MarketRevealPayload` | `current ∈ [market.reveal.nbf, market.reveal.exp)`; participant has a recorded commit for this market; `prediction ∈ market.options`; `hash(prediction + salt)` matches the recorded commitment |
-| **Settlement gate** | Before signing a `MarketSettlementPayload` | `current >= market.reveal.exp`; `outcome ∈ market.options`; settlement signer's address ∈ `market.outcomeAuthorities`; every reveal included in the settlement BW co-payloads has been re-verified against its commit |
+| **Reveal gate** | Before submitting a `MarketRevealPayload` | `current ∈ [market.reveal.nbf, market.reveal.exp)`; participant has a recorded commit for this market, signed by the account that will sign the reveal; `prediction ∈ market.options`; the commitment recomputed from the participant's address, `marketId`, `prediction`, and `salt` matches the recorded commitment |
+| **Settlement gate** | Before signing a `MarketSettlementPayload` | `current >= market.reveal.exp`; `outcome ∈ market.options`; settlement signer's address ∈ `market.outcomeAuthorities`; every reveal included in the settlement BW co-payloads has been re-verified against its signer's own commit (reveal-transaction `from` === commit-transaction `from`) |
 
-The settlement gate explicitly **re-runs** the reveal-gate hash check on every reveal it bundles. This matters because a settler may receive reveals from an untrusted source (a relayer, an indexer cache); the cryptographic check is cheap and removes the trust assumption.
+The settlement gate explicitly **re-runs** the reveal-gate signer and hash checks on every reveal it bundles. This matters because a settler may receive reveals from an untrusted source (a relayer, an indexer cache); the cryptographic check is cheap and removes the trust assumption. Take each signer from the `from` of the finalized `TransactionBoundWitness` that carried the payload — never from the relayer or a payload field — see [Commit-Reveal — Binding Commits to Identity](commit-reveal.md#binding-commits-to-identity).
 
 ---
 
@@ -236,7 +241,7 @@ async function createMarket(
 
 ## Phase 2: Commit Predictions
 
-Participants commit their predictions using the [Commit-Reveal Primitive](commit-reveal.md). The commit-gate checks (see [Validation Gates](#validation-gates)) run before submission. The commit payload uses `$sources` to bind itself to the market by hash:
+Participants commit their predictions using the [Commit-Reveal Primitive](commit-reveal.md). The commit-gate checks (see [Validation Gates](#validation-gates)) run before submission. The commitment binds the participant's signing address and the `marketId` (see [Commit-Reveal — Generating the Commitment](commit-reveal.md#generating-the-commitment)), and the commit payload uses `$sources` to bind itself to the market by hash:
 
 ```ts
 async function commitPrediction(
@@ -245,7 +250,11 @@ async function commitPrediction(
   prediction: string,
 ): Promise<{ txHash: Hash; salt: string }> {
   const salt = generateSalt()
-  const commitment = await createCommitment(prediction, salt)
+  // The account that will sign the commit transaction — bound into the preimage
+  const committer = await gateway.signer.address()
+  const commitment = await createCommitment({
+    committer, topic: market.marketId, choice: prediction, salt,
+  })
   const marketHash = await PayloadBuilder.hash(market)
 
   const commitPayload: MarketCommitPayload = asMarketCommitPayload(
@@ -257,7 +266,8 @@ async function commitPrediction(
   )
 
   await datalakeRunner.insert([commitPayload])
-  const [txHash] = await gateway.addPayloadsToChain([], [commitPayload])
+  // `from` asserts the transaction is signed by the address bound into the preimage
+  const [txHash] = await gateway.addPayloadsToChain([], [commitPayload], { from: committer })
 
   // Store salt locally — needed for reveal phase
   return { txHash, salt }
@@ -296,6 +306,8 @@ async function revealPrediction(
 }
 ```
 
+Reveal from the account that committed — the settlement gate only accepts a reveal whose transaction signer is the commit's signer.
+
 ---
 
 ## Phase 4: Settle
@@ -304,23 +316,29 @@ After `market.reveal.exp`, an address listed in `market.outcomeAuthorities` sett
 
 ```ts
 import { BoundWitnessBuilder } from '@xyo-network/sdk'
+import type { XyoAddress } from '@xyo-network/sdk'
 
 async function settleMarket(
   gateway: XyoGatewayRunner,
   authority: Account,
   market: MarketPayload,
   outcome: string,
-  reveals: MarketRevealPayload[],
-  commitsByHash: Record<Hash, MarketCommitPayload>,
+  // Each signer is the `from` of the finalized TransactionBoundWitness that carried the payload
+  reveals: { reveal: MarketRevealPayload; signer: XyoAddress }[],
+  commitsBySigner: Map<XyoAddress, MarketCommitPayload>,
 ): Promise<Hash> {
   // Settlement gate: re-verify every reveal against its commit. Never trust the caller.
   const verifiedReveals: MarketRevealPayload[] = []
-  for (const reveal of reveals) {
-    const [commitHash] = reveal.$sources ?? []
-    const commit = commitHash ? commitsByHash[commitHash] : undefined
+  for (const { reveal, signer } of reveals) {
+    // Only the committer can reveal — check against the reveal signer's own commit
+    const commit = commitsBySigner.get(signer)
     if (!commit || commit.marketId !== reveal.marketId) continue
+    const [commitHash] = reveal.$sources ?? []
+    if (commitHash !== await PayloadBuilder.hash(commit)) continue
 
-    const expected = await createCommitment(reveal.prediction, reveal.salt)
+    const expected = await createCommitment({
+      committer: signer, topic: market.marketId, choice: reveal.prediction, salt: reveal.salt,
+    })
     if (expected === commit.commitment) verifiedReveals.push(reveal)
   }
 
@@ -353,34 +371,58 @@ async function settleMarket(
 
 ### Deriving winners (and losers)
 
-Winners and losers are not stored on the settlement payload — they are a **pure function** of the outcome and the verified reveals embedded in the BW. Compute them where you need them:
+Winners and losers are not stored on the settlement payload — they are a **pure function** of the outcome, the verified reveals embedded in the BW, and the market's commits keyed by signer (see [Querying Market State](#querying-market-state)). Compute them where you need them:
 
 ```ts
-function deriveWinners(
+async function deriveWinners(
   settlement: MarketSettlementPayload,
   bw: BoundWitness,
   payloads: Payload[],
-): { winners: Address[]; losers: Address[] } {
-  // The reveals included in the settlement BW are, by construction, the verified set.
+  // Each commit keyed by the `from` of the transaction that carried it — see buildMarketState
+  commitsBySigner: Map<XyoAddress, MarketCommitPayload>,
+): Promise<{ winners: XyoAddress[]; losers: XyoAddress[] }> {
+  // The reveals in the settlement BW are the settler's verified set;
+  // resolving each one to its committer re-checks it.
   const verifiedReveals = payloads.filter(isMarketRevealPayload)
 
-  // Map each reveal to the address that signed its commit.
-  // (See "Binding Commits to Identity" in commit-reveal.md — the commit signer
-  //  is the participant of record. Resolve via the commit's TransactionBoundWitness.)
-  const winners: Address[] = []
-  const losers: Address[] = []
+  const winners = new Set<XyoAddress>()
+  const losers = new Set<XyoAddress>()
   for (const reveal of verifiedReveals) {
-    const participant = participantFor(reveal)  // app-specific resolver
-    if (reveal.prediction === settlement.outcome) winners.push(participant)
-    else losers.push(participant)
+    const participant = await participantFor(settlement.marketId, reveal, commitsBySigner)
+    if (!participant) continue // no committer's address recomputes it — not a verified reveal
+    if (reveal.prediction === settlement.outcome) winners.add(participant)
+    else losers.add(participant)
   }
-  return { winners, losers }
+  return { winners: [...winners], losers: [...losers] }
+}
+
+/**
+ * The participant of record is the commit signer (see "Binding Commits to Identity" in
+ * commit-reveal.md). A copied commit shares the payload hash the reveal `$sources`, so
+ * resolve to the signer whose own address recomputes the commitment — the one the
+ * settlement gate verified.
+ */
+async function participantFor(
+  marketId: string,
+  reveal: MarketRevealPayload,
+  commitsBySigner: Map<XyoAddress, MarketCommitPayload>,
+): Promise<XyoAddress | undefined> {
+  if (reveal.marketId !== marketId) return undefined
+  const [commitHash] = reveal.$sources ?? []
+  for (const [signer, commit] of commitsBySigner) {
+    if (commit.marketId !== marketId || commitHash !== await PayloadBuilder.hash(commit)) continue
+    const expected = await createCommitment({
+      committer: signer, topic: marketId, choice: reveal.prediction, salt: reveal.salt,
+    })
+    if (expected === commit.commitment) return signer
+  }
+  return undefined
 }
 ```
 
 ### Optional: publishing a `MarketResultsView` cache
 
-For markets with many participants, an indexer or the settler may publish a non-authoritative `MarketResultsViewPayload` to amortize derivation. **The view is a cache, never the source of truth** — any consumer should be able to recompute it from the settlement BW alone.
+For markets with many participants, an indexer or the settler may publish a non-authoritative `MarketResultsViewPayload` to amortize derivation. **The view is a cache, never the source of truth** — any consumer should be able to recompute it from the settlement BW and the market's on-chain commits.
 
 ```ts
 async function publishResultsView(
@@ -388,9 +430,10 @@ async function publishResultsView(
   settlement: MarketSettlementPayload,
   settlementBw: BoundWitness,
   payloads: Payload[],
+  commitsBySigner: Map<XyoAddress, MarketCommitPayload>,
 ): Promise<Hash> {
   const settlementHash = await PayloadBuilder.hash(settlement)
-  const { winners, losers } = deriveWinners(settlement, settlementBw, payloads)
+  const { winners, losers } = await deriveWinners(settlement, settlementBw, payloads, commitsBySigner)
 
   const view: MarketResultsViewPayload = asMarketResultsViewPayload(
     new PayloadBuilder({ schema: MarketResultsViewSchema })
@@ -417,33 +460,54 @@ UIs that consume the view **must** treat it as advisory. If `view.settlement` do
 
 ## Querying Market State
 
-Use the [Chain Data Indexing](chain-data-indexing-protocol.md) pattern to reconstruct market state from on-chain payloads. Group by `marketId` to build a complete view. The filters below use the Zod-factory guards exported earlier in this skill — `isMarketCommitPayload`, `isMarketRevealPayload`, `isMarketSettlementPayload` — which validate schema name *and* shape on every chain read.
+Use the [Chain Data Indexing](chain-data-indexing-protocol.md) pattern to reconstruct market state from on-chain payloads. Group by `marketId` to build a complete view, and key each commit and reveal by the signer of the transaction that carried it: fetch each body from the datalake by a hash its transaction lists and pair it with that transaction's `from`, as in [Commit-Reveal — Binding Commits to Identity](commit-reveal.md#binding-commits-to-identity). A copied commitment is the same payload in a second transaction, so counting commit payloads over-counts participants — count distinct `(marketId, signer)` pairs. The filters below use the Zod-factory guards exported earlier in this skill — `isMarketCommitPayload`, `isMarketRevealPayload`, `isMarketSettlementPayload` — which validate schema name *and* shape on every chain read.
 
 ```ts
+import type { Payload, XyoAddress } from '@xyo-network/sdk'
+
+/** A payload body paired with the `from` of the TransactionBoundWitness that carried it */
+interface SignedPayload {
+  payload: Payload
+  signer: XyoAddress
+}
+
 interface MarketState {
   market: MarketPayload
-  commits: MarketCommitPayload[]
-  reveals: MarketRevealPayload[]
+  /** One commit per participant — the market's distinct (marketId, signer) pairs */
+  commitsBySigner: Map<XyoAddress, MarketCommitPayload>
+  /** Each reveal with its own transaction's signer — the shape settleMarket takes */
+  reveals: { reveal: MarketRevealPayload; signer: XyoAddress }[]
   settlement?: MarketSettlementPayload
   phase: 'pending' | 'commit' | 'reveal' | 'settled' | 'expired'
 }
 
 function buildMarketState(
   market: MarketPayload,
-  allPayloads: Payload[],
+  // In chain order; each body already matched to a hash its own transaction lists
+  signedPayloads: SignedPayload[],
   currentBlock: number,
 ): MarketState {
-  const commits = allPayloads
-    .filter(isMarketCommitPayload)
-    .filter(c => c.marketId === market.marketId)
+  const commitsBySigner = new Map<XyoAddress, MarketCommitPayload>()
+  const reveals: MarketState['reveals'] = []
+  for (const { payload, signer } of signedPayloads) {
+    if (isMarketCommitPayload(payload) && payload.marketId === market.marketId) {
+      // Keyed by signer, a copied commitment never adds a participant; a signer's first commit stands
+      if (!commitsBySigner.has(signer)) commitsBySigner.set(signer, payload)
+    } else if (isMarketRevealPayload(payload) && payload.marketId === market.marketId) {
+      reveals.push({ reveal: payload, signer })
+    }
+  }
 
-  const reveals = allPayloads
-    .filter(isMarketRevealPayload)
-    .filter(r => r.marketId === market.marketId)
-
-  const settlement = allPayloads
-    .filter(isMarketSettlementPayload)
-    .find(s => s.marketId === market.marketId)
+  // Only a configured outcome authority can settle — a settlement payload from any
+  // other signer is ignored, or anyone could flip the market to 'settled'
+  let settlement: MarketSettlementPayload | undefined
+  for (const { payload, signer } of signedPayloads) {
+    if (isMarketSettlementPayload(payload) && payload.marketId === market.marketId
+      && market.outcomeAuthorities.includes(signer)) {
+      settlement = payload
+      break
+    }
+  }
 
   const phase = settlement
     ? 'settled'
@@ -455,7 +519,7 @@ function buildMarketState(
           ? 'commit'
           : 'pending'
 
-  return { market, commits, reveals, settlement, phase }
+  return { market, commitsBySigner, reveals, settlement, phase }
 }
 ```
 
@@ -465,7 +529,7 @@ The `pending` phase covers the (usually short) window before `commit.nbf` — th
 
 ## React Integration
 
-Use [In-Page Data Lakes](in-page-datalakes.md) so visitors can browse markets without connecting a wallet. Gate commit/reveal actions behind wallet connection. The parent app must use `GatewayProvider` (with `InPageGatewaysProvider` ancestor) — not `WalletGatewayProvider` — for read-only browsing to work without a wallet:
+Use [In-Page Data Lakes](in-page-datalakes.md) so visitors can browse markets without connecting a wallet. Gate commit/reveal actions behind wallet connection. The parent app must use `GatewayProvider` (with an `InPageGatewaysProvider transport="rest"` ancestor) — not `WalletGatewayProvider` — for read-only browsing to work without a wallet:
 
 ```tsx
 import { useProvidedGateway } from '@xyo-network/xl1-react-client-sdk'
@@ -474,23 +538,25 @@ import { StorageArchivist, StorageArchivistConfigSchema } from '@xyo-network/arc
 function MarketPage({ marketId }: { marketId: string }) {
   const { defaultGateway } = useProvidedGateway()
   const [market, setMarket] = useState<MarketState>()
-  const [address, setAddress] = useState<string>()
+  const [address, setAddress] = useState<XyoAddress>()
   const [secretStore, setSecretStore] = useState<StorageArchivist>()
 
   const canWrite = defaultGateway && 'addPayloadsToChain' in defaultGateway
 
   // Create a StorageArchivist for persisting commit-reveal secrets (salts, choices).
-  // Namespace-scoped to this market so secrets don't collide across markets.
+  // Namespaced per (market, committer) so secrets don't collide across markets or
+  // across accounts sharing this browser (same rule as Commit-Reveal § Submitting the Commit).
   useEffect(() => {
+    if (!address) return
     StorageArchivist.create({
       account: 'random',
       config: {
         schema: StorageArchivistConfigSchema,
         type: 'local',
-        namespace: `market-secrets-${marketId}`,
+        namespace: `market-secrets-${marketId}-${address}`,
       },
     }).then(setSecretStore)
-  }, [marketId])
+  }, [marketId, address])
 
   useEffect(() => {
     if (!defaultGateway) return
@@ -504,13 +570,16 @@ function MarketPage({ marketId }: { marketId: string }) {
     <div>
       {/* Always visible — read-only */}
       <MarketHeader market={market.market} phase={market.phase} />
-      <CommitCount count={market.commits.length} />
+      <CommitCount count={market.commitsBySigner.size} />
 
       {market.phase === 'settled' && (
         <SettlementResults settlement={market.settlement!} />
       )}
 
-      <ConnectAccountsStack onAccountConnected={setAddress} />
+      {/* Keep the chosen account while it is still granted; [] (revoked) clears it — see Browser UX */}
+      <ConnectAccountsStack
+        onAccountsChanged={accounts => setAddress(current => (current !== undefined && accounts.includes(current) ? current : accounts[0]))}
+      />
 
       {canWrite && address && market.phase === 'commit' && (
         <CommitForm
@@ -566,7 +635,7 @@ The schema namespace, validity windows, and authority list change — the commit
 
 This recipe is dApp-shaped: every transition is signed by a participant or authority directly from the browser (or a Node script), and the chain is the integration point. There is no server-side module managing state.
 
-If your application instead needs a **neutral, always-on attesting party** — for example, a multi-tenant escrow service, a payment-mediated registrar, or a flow where the protocol must hold custody of an artifact between commit and release — that is the shape XYO's [Sentinel](../xyo-knowledge/modules.md) module covers. The XYO/XNS escrow flow is the canonical example: an `EscrowSentinel` runs server-side, signs every state transition with its own account, and gates settlement on multi-party signature evidence. If you build one, derive the operator identity through the canonical seed-phrase pattern in [XL1 Identity & Wallets](../xl1-knowledge/identity.md) and pass the account to `GatewayBuilder.account(...)` (see [Node Gateway](../xl1-knowledge/gateway-node.md)) so the operator address is reproducible across restarts and inspectable in MetaMask.
+If your application instead needs a **neutral, always-on attesting party** — for example, a multi-tenant escrow service, a payment-mediated registrar, or a flow where the protocol must hold custody of an artifact between commit and release — that is the shape XYO's [Sentinel](../xyo-knowledge/modules.md) module covers. The XYO/XNS escrow flow is the canonical example: the escrow agent named in its `network.xyo.escrow.terms` payload (`@xyo-network/payload-plugins/payment`, alongside `network.xyo.escrow.outcome`) is a Sentinel module that runs server-side, signs every state transition with its own account, and gates settlement on multi-party signature evidence. If you build one, derive the operator identity through the canonical seed-phrase pattern in [XL1 Identity & Wallets](../xl1-knowledge/identity.md) and pass the account to `GatewayBuilder.account(...)` (see [Node Gateway](../xl1-knowledge/gateway-node.md)) so the operator address is reproducible across restarts and inspectable in MetaMask.
 
 For a dApp, the Sentinel pattern is overkill and conflicts with "the chain is the source of truth." Reach for it only when an off-chain notary is genuinely required.
 

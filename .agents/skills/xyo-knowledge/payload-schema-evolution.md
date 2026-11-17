@@ -94,8 +94,8 @@ Author the type as in [Authoring a payload type](primitives.md#authoring-a-paylo
 The envelope factory is what binds schema name and `$version` to the field shape:
 
 ```ts
-import * as z from 'zod/mini'
 import { asSchema, PayloadZodOfSchema } from '@xyo-network/sdk'
+import { z } from 'zod/mini'
 
 const ReadingSchema = asSchema('com.example.sensor.reading', true)
 const ReadingFieldsZod = z.object({ temperatureCelsius: z.number() })
@@ -114,9 +114,9 @@ shape, and `isPayloadVersionSupported` supports a separate version gate.
 A bare `schema === X` or `z.literal(X)` does not check version or shape — and it
 does not produce a payload envelope. `isPayloadOfSchemaType` checks the tag and
 supported version but not the custom fields. Use the complete typed guard on
-chain/datalake reads. Do not retry failed parsing with an older version, infer
-the revision from whatever shape passes, or accept unsupported versions merely
-because an object is open.
+every read from an archivist, a remote store, or another party. Do not retry
+failed parsing with an older version, infer the revision from whatever shape
+passes, or accept unsupported versions merely because an object is open.
 
 Verify the original object's hash before projection. **Preserve `$version` before
 validation**: `omitMeta` and `omitClientMeta` delete it. If a shipped parser needs
@@ -148,14 +148,19 @@ weaker authentication, authorization, closure, or consensus rules.
 Cache schema definitions by `(schema, effectiveVersion)`. Cache validation by root
 hash **and** applicable validator/authorization policy. A data-hash lookup may
 group variants but must not silently replace one representation with another.
-Check actual archivist lookup/dedup behavior; a generic data-hash-based store does
-not become representation-safe through a new key in application code alone.
+SDK archivists (every `AbstractArchivist` subclass — Memory, IndexedDb, Storage,
+…) store and dedupe on the root `_hash`, so variants that share a data hash are
+kept side by side. Their `get()` accepts a data hash as an alias but answers with
+a data-only view (`$*` removed, `_hash` set to the data hash), never a stored
+representation — fetch by root hash when `$version` or `$sources` matters. A
+custom store keyed by data hash does not become representation-safe through a
+new key in application code alone.
 
 ## Existing protocol exceptions and migration
 
-Keep the hash algorithm prescribed by a shipped protocol. BoundWitness signing,
-Statement Graph object references, ordinal/inscription IDs and burn derivation,
-exchange commitments, and Event Kit contracts may intentionally use data hashes.
+Keep the hash algorithm prescribed by a shipped protocol. BoundWitness signing
+uses data hashes, and so may any shipped protocol whose contract names one —
+object references, inscription or token IDs, commitment schemes.
 Import their builders/validators and preserve their current algorithms and names.
 Do not globally replace `dataHash` calls or label a skill/example edit a deployed
 migration. A change needs versioned definitions, compatibility/activation rules,
@@ -163,3 +168,6 @@ historical replay handling, and verification in that protocol and its consumers.
 
 For new applications that are not bound to one of those contracts, use root hashes
 and explicit supported-version/shape validation from the start.
+
+Building on XL1? See [Development on XL1 — Payload contracts are version-aware](../xl1-knowledge/development.md#payload-contracts-are-version-aware)
+for the XL1-layer protocols that keep data hashes.

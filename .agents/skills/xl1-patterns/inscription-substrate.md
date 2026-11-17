@@ -8,7 +8,7 @@ This pattern is the substrate. Higher-layer protocols (fungible tokens, collecti
 - [Declarative Payloads, Structural Authorship](../xyo-knowledge/best-practices.md) — the foundational decomposition this pattern exploits
 - [Chain Data Indexing](chain-data-indexing-protocol.md) — schema-based payload submission and read models
 - [In-Page Data Lakes](in-page-datalakes.md) — read-only browse without a wallet
-- [Gateway](../xl1-knowledge/gateway.md) — `connection.viewer.finalization` for finalized state, `connection.viewer.block` for hydrated blocks
+- [Gateway](../xl1-knowledge/gateway.md) — `connection.viewer.finalization` for finalized state, `connection.viewer.block` for block reads (on-chain payloads only)
 - [Datalakes](../xl1-knowledge/datalakes.md) — off-chain payload storage referenced by on-chain hash
 
 ---
@@ -63,7 +63,7 @@ TransactionBoundWitness ──────────────► canonical 
 1. **Define inscription and transfer schemas** under `network.xyo.ordinal.*`
 2. **Submit inscriptions** via `addPayloadsToChain([], [inscription])` — datalake stores the bytes, BoundWitness commits the hash on-chain
 3. **Submit transfers** the same way, signed by the current owner
-4. **Indexer** polls finalized blocks, replays events, maintains an ownership ledger
+4. **Indexer** follows finalized blocks in order, replays events, maintains an ownership ledger
 5. **Browse** by reading the indexer or filtering the datalake by schema
 
 ---
@@ -104,11 +104,12 @@ References the target inscription by its content-addressed ID and declares the n
 The substrate uses **carrier Path A** (off-chain payload referenced by TransactionBoundWitness) plus **dual sentinel transfers** for free chain-native indexing. See [Chain Data Indexing — Choosing a Carrier](chain-data-indexing-protocol.md#choosing-a-carrier--how-to-anchor-off-chain-data-on-chain) and [Destination as Protocol](chain-data-indexing-protocol.md#destination-as-protocol--a-native-xl1-pattern) for the full landscape.
 
 ```ts
-import { PayloadBuilder } from '@xyo-network/sdk'
-import { sentinelAddressFromSchema } from '@xyo-network/xl1-sdk'
+import { asXyoAddress, PayloadBuilder } from '@xyo-network/sdk'
+import { createTransferPayload, sentinelAddressFromSchema } from '@xyo-network/xl1-sdk'
 
-// Pinned protocol sentinel — equals sentinelAddressFromSchema('network.xyo.ordinal')
-const ORDINAL_SENTINEL = '4b210503f8caa8e82d38617997f2eaf612c0ec04'
+// Pinned protocol sentinel — equals sentinelAddressFromSchema('network.xyo.ordinal').
+// asXyoAddress brands the literal so it can key a transfers map.
+const ORDINAL_SENTINEL = asXyoAddress('4b210503f8caa8e82d38617997f2eaf612c0ec04', true)
 
 const inscription = new PayloadBuilder<Inscription>({ schema: InscriptionSchema })
   .fields({ contentType: 'text/plain', content: 'Hello, XL1.' })
@@ -121,17 +122,14 @@ const inscriptionId = await PayloadBuilder.dataHash(inscription)
 // Per-payload burn address — verifiably no key, bound to this specific inscription
 const burnAddress = sentinelAddressFromSchema('network.xyo.ordinal', inscriptionId)
 
-// One Transfer payload, two recipients: protocol sentinel + per-payload burn
-const sentinelTransfer = new PayloadBuilder({ schema: 'network.xyo.transfer' })
-  .fields({
-    from: walletAddress,         // chain stores addresses without the 0x prefix
-    epoch: Date.now(),
-    transfers: {
-      [ORDINAL_SENTINEL]: '1',
-      [burnAddress]:      '1',
-    },
-  })
-  .build()
+// One Transfer payload, two recipients: protocol sentinel + per-payload burn.
+// createTransferPayload builds the chain's TransferSchema payload — { from, epoch, transfers } —
+// stamping `epoch` and hex-encoding the bigint AttoXL1 amounts. `from` is the
+// signing wallet's XyoAddress (no 0x prefix); it must equal the transaction's `from`.
+const sentinelTransfer = createTransferPayload(walletAddress, {
+  [ORDINAL_SENTINEL]: 1n,
+  [burnAddress]: 1n,
+})
 
 // 1. Persist content to the dApp's datalake
 await datalakeRunner.insert([inscription])
@@ -160,24 +158,18 @@ A transfer is signed by the **current owner** (whoever the indexer's ledger show
 ```ts
 const transfer = new PayloadBuilder<OrdinalTransfer>({ schema: OrdinalTransferSchema })
   .fields({
-    inscriptionId: 'abc123…',  // the inscription's data hash, no 0x prefix
-    to: 'recipient40HexChars…',
+    inscriptionId,          // the inscription's data hash (a Hash — see Step 2), no 0x prefix
+    to: recipientAddress,   // the recipient's XyoAddress
   })
   .build()
 
 const transferId = await PayloadBuilder.dataHash(transfer)
 const burnAddress = sentinelAddressFromSchema('network.xyo.ordinal', transferId)
 
-const sentinelTransfer = new PayloadBuilder({ schema: 'network.xyo.transfer' })
-  .fields({
-    from: currentOwnerAddress,
-    epoch: Date.now(),
-    transfers: {
-      [ORDINAL_SENTINEL]: '1',
-      [burnAddress]:      '1',
-    },
-  })
-  .build()
+const sentinelTransfer = createTransferPayload(currentOwnerAddress, {
+  [ORDINAL_SENTINEL]: 1n,
+  [burnAddress]: 1n,
+})
 
 await datalakeRunner.insert([transfer])
 await defaultGateway.addPayloadsToChain([sentinelTransfer], [transfer])
@@ -217,20 +209,23 @@ If the dApp wants real bounded performance, it must split: one process runs the 
 The substrate's record is intentionally schema-agnostic. Anything with an artifact-shaped lifecycle — a plain inscription, a token deploy, a collection root — goes in the same map. Schema-specific details live in higher-layer state alongside it.
 
 ```ts
-import type { Payload } from '@xyo-network/sdk'
+import type { Hash } from '@ariestools/sdk'
+import type { Payload, XyoAddress } from '@xyo-network/sdk'
+import type { XL1BlockNumber } from '@xyo-network/xl1-sdk'
 
 type ArtifactRecord = {
   id: string                    // content-addressed hash — the artifact ID
-  creator: Address              // signer of the BoundWitness that introduced it
-  owner: Address                // current owner — updates as transfers replay
+  creator: XyoAddress           // signer of the BoundWitness that introduced it
+  owner: XyoAddress             // current owner — updates as transfers replay
   payload: Payload              // the artifact's declarative content (any schema)
   inscribedAt: XL1BlockNumber   // block height at which it was first finalized
 }
 
 type IndexerState = {
   artifacts: Map<string, ArtifactRecord>
-  byOwner:   Map<Address, Set<string>>  // per-address side-index — see Scan Strategies §3
-  lastProcessedBlock: XL1BlockNumber
+  byOwner:   Map<XyoAddress, Set<string>>  // per-address side-index — see Scan Strategies §3
+  lastProcessedHash?: Hash                  // checkpoint: hash of the last applied block (resume cursor)
+  lastProcessedBlock?: XL1BlockNumber       // checkpoint: its height (ordering, display)
 }
 ```
 
@@ -240,69 +235,95 @@ The `byOwner` side-index is maintained alongside `artifacts` during replay. It c
 
 A hydrated block is a tuple `[BlockBoundWitness, Payload[]]` where the payloads array contains the block's **on-chain** payloads only — system payloads and the `TransactionBoundWitness` instances that introduced application data. The off-chain inscription / transfer payloads referenced by each `TransactionBoundWitness.payload_hashes[]` are **not** in `payloads`, even with a datalake configured (see [Gateway — What `block.blockByNumber` returns](../xl1-knowledge/gateway.md#what-blockblockbynumber-and-friends-returns--hydration-is-shallow)).
 
-The `TransactionBoundWitness` is the structural carrier of authorship — its `from` field is the signer, its `payload_hashes[]` lists the wrapped payload hashes, and its parallel `payload_schemas[]` tells you what each one is *without* fetching it. The replay does a three-pass scan: build a hash→signer index from the transactions in the block, fetch the off-chain inscription/transfer payloads via `payloadsByHash`, then attribute the fetched payloads through the index.
+The `TransactionBoundWitness` is the structural carrier of authorship — its `from` field is the signer, its `payload_hashes[]` lists the wrapped payload hashes, and its parallel `payload_schemas[]` tells you what each one is *without* fetching it. The replay applies one finalized block at a time in a three-pass scan: list every substrate hash the block's transactions reference, in canonical order, each paired with *its own* transaction's signer; fetch the distinct off-chain bodies once from the datalake with `datalakeViewer.get(...)` (no gateway read returns them); then apply the refs in order, looking each body up by hash.
 
 ```ts
-import type { XyoGateway } from '@xyo-network/xl1-sdk'
-import { isTransactionBoundWitness } from '@xyo-network/xl1-sdk'
-import type { Address, Hash } from '@xyo-network/sdk'
+import type { Hash } from '@ariestools/sdk'
+import type { Payload, WithHashMeta, XyoAddress } from '@xyo-network/sdk'
+import { isAnyPayload, PayloadBuilder } from '@xyo-network/sdk'
+import type { SignedHydratedBlockWithHashMeta } from '@xyo-network/xl1-sdk'
+import {
+  createRestDataLakeViewer, isTransactionBoundWitness, NetworkDataLakeUrls,
+} from '@xyo-network/xl1-sdk'
 
 const SUBSTRATE_SCHEMAS = new Set<string>([InscriptionSchema, OrdinalTransferSchema])
 
-async function replayFinalizedBlocks(gateway: XyoGateway, state: IndexerState) {
-  const viewer = gateway.connection.viewer
-  if (!viewer) throw new Error('Gateway has no viewer attached')
+// Bodies are read from the datalake the inscribe/transfer path writes to
+// (datalakeRunner's endpoint): the dApp's configured endpoint, defaulting to the network's
+const DATALAKE_ENDPOINT = appConfig.dataLakeEndpoint ?? NetworkDataLakeUrls[networkId]
+const datalakeViewer = await createRestDataLakeViewer(DATALAKE_ENDPOINT)
 
-  // Bound the replay window to the finalized head — never derive from unfinalized state
-  const finalizedHead = Number(await viewer.finalization.headNumber())
-  if (finalizedHead <= state.lastProcessedBlock) return
+/** One occurrence of a substrate hash in a block, kept with the signer of the transaction that listed it */
+interface SubstrateRef {
+  hash: Hash
+  /** `from` of the TransactionBoundWitness that carried this hash */
+  signer: XyoAddress
+  /** That transaction's hash, and this hash's position in its payload_hashes[] */
+  txHash: Hash
+  index: number
+}
 
-  for (let n = state.lastProcessedBlock + 1; n <= finalizedHead; n++) {
-    const hydrated = await viewer.block.blockByNumber(n)
-    if (!hydrated) continue
-    const [, payloads] = hydrated
-
-    // Pass 1: index every off-chain hash to its signer, and gather the hashes
-    // whose schema this indexer cares about. payload_hashes[i] / payload_schemas[i]
-    // are parallel arrays — read both together.
-    const hashToSigner = new Map<Hash, Address>()
-    const offChainHashes: Hash[] = []
-    for (const p of payloads) {
-      if (!isTransactionBoundWitness(p)) continue
-      for (let i = 0; i < p.payload_hashes.length; i++) {
-        const hash = p.payload_hashes[i]
-        hashToSigner.set(hash, p.from)
-        if (SUBSTRATE_SCHEMAS.has(p.payload_schemas[i])) {
-          offChainHashes.push(hash)
-        }
-      }
-    }
-
-    // Pass 2: fetch the off-chain payloads from the datalake by hash. This is
-    // the step that actually retrieves the inscription/transfer bodies — the
-    // block reader does not do it for you.
-    const offChain = offChainHashes.length > 0
-      ? await viewer.block.payloadsByHash(offChainHashes)
-      : []
-
-    // Pass 3: process inscription/transfer payloads with structural authorship
-    for (const p of offChain) {
-      const signer = hashToSigner.get(p._hash)
-      if (!signer) continue // hash mismatch — defensive only
-
-      if (isInscription(p)) {
-        registerArtifact(state, p, signer, n)
-      } else if (isOrdinalTransfer(p)) {
-        applyTransfer(state, p, signer)
+/**
+ * Pass 1: substrate refs in canonical order — transactions in the order the block
+ * lists them (its own payload_hashes[]), then each transaction's payload_hashes[]
+ * in order. One ref per occurrence: two transactions carrying a byte-identical
+ * payload (two identical mints, a copied event) are two refs with two signers.
+ */
+function substrateRefs([blockBw, blockPayloads]: SignedHydratedBlockWithHashMeta): SubstrateRef[] {
+  const onChain = new Map(blockPayloads.map(p => [p._hash, p]))
+  const refs: SubstrateRef[] = []
+  for (const txHash of blockBw.payload_hashes) {
+    const tx = onChain.get(txHash)
+    if (!isTransactionBoundWitness(tx)) continue
+    // payload_hashes[i] / payload_schemas[i] are parallel arrays — read both together
+    for (let index = 0; index < tx.payload_hashes.length; index++) {
+      if (SUBSTRATE_SCHEMAS.has(tx.payload_schemas[index])) {
+        refs.push({
+          hash: tx.payload_hashes[index], signer: tx.from, txHash, index,
+        })
       }
     }
   }
+  return refs
+}
 
-  state.lastProcessedBlock = finalizedHead
+/**
+ * Pass 2: fetch each distinct body once from the datalake — no gateway read
+ * (block reader or payloadsByHash) returns off-chain bodies. `get` omits hashes
+ * it doesn't hold (positions shift) and promises no order, so key the result by
+ * hash, never by position. The datalake is untrusted storage: addHashMeta recomputes
+ * `_hash` / `_dataHash` from each body, so a body is only found under the hash
+ * it actually hashes to.
+ */
+async function fetchBodies(refs: SubstrateRef[]): Promise<Map<Hash, WithHashMeta<Payload>>> {
+  const hashes = [...new Set(refs.map(ref => ref.hash))]
+  if (hashes.length === 0) return new Map()
+  const fetched = (await datalakeViewer.get(hashes)).filter(isAnyPayload)
+  const hashed = await PayloadBuilder.addHashMeta(fetched)
+  return new Map(hashed.map(body => [body._hash, body]))
+}
+
+/** Apply one finalized block — the driver below calls this once per block, in order */
+async function applySubstrateBlock(state: IndexerState, block: SignedHydratedBlockWithHashMeta): Promise<void> {
+  const blockHeight = block[0].block
+  const refs = substrateRefs(block)
+  const bodies = await fetchBodies(refs)
+
+  // Pass 3: apply every ref in canonical order, under its own transaction's signer
+  for (const { hash, signer } of refs) {
+    const p = bodies.get(hash)
+    if (!p) continue // not in the datalake, or no fetched body hashes to it — drop
+
+    if (isInscription(p)) {
+      registerArtifact(state, p, signer, blockHeight)
+    } else if (isOrdinalTransfer(p)) {
+      applyTransfer(state, p, signer)
+    }
+  }
 }
 ```
 
-The `hashToSigner` index covers every off-chain hash a transaction in this block referenced; the schema filter in pass 1 keeps the `payloadsByHash` call narrow to substrate-relevant payloads only.
+Each ref keeps a hash paired with its own transaction's signer — **not** a `hash → signer` map. A map collapses repeated hashes: when two transactions in a block carry a byte-identical payload, the last writer wins, one event is lost, and the surviving one can be credited to the wrong signer. The datalake returns bodies with missing hashes omitted and no ordering guarantee, so apply order comes from the refs, never from the fetched array. This is the same per-transaction pairing as [Commit-Reveal — Binding Commits to Identity](commit-reveal.md#binding-commits-to-identity). The schema filter in pass 1 keeps the datalake `get` call narrow to substrate-relevant payloads only.
 
 ### A note on `tx.from` vs `transfer.from`
 
@@ -318,7 +339,7 @@ Content-addressed identity means duplicates collapse harmlessly. First-finalized
 function registerArtifact(
   state: IndexerState,
   payload: WithHashMeta<Payload>,  // verified root and data hash metadata
-  signer: Address,
+  signer: XyoAddress,
   blockHeight: XL1BlockNumber,
 ) {
   const id = payload._dataHash // ordinal identity uses the prescribed data hash
@@ -333,7 +354,7 @@ function registerArtifact(
   addToOwner(state, signer, id)
 }
 
-function addToOwner(state: IndexerState, owner: Address, id: string) {
+function addToOwner(state: IndexerState, owner: XyoAddress, id: string) {
   if (!state.byOwner.has(owner)) state.byOwner.set(owner, new Set())
   state.byOwner.get(owner)!.add(id)
 }
@@ -347,7 +368,7 @@ Three structural changes: validate target exists, validate signer is current own
 function applyTransfer(
   state: IndexerState,
   payload: OrdinalTransfer,
-  signer: Address,
+  signer: XyoAddress,
 ) {
   const record = state.artifacts.get(payload.inscriptionId)
   if (!record) return                       // unknown target — drop
@@ -363,13 +384,40 @@ Drops are silent and intentional. A misaddressed or unauthorized transfer is a m
 
 ### Polling cadence
 
+Don't hand-roll a `setInterval` block walk. Drive `applySubstrateBlock` from a finalized block stream — it polls the finalized head for you, delivers each finalized block once and in order, and verifies continuity from your checkpoint hash. Checkpoint `{ hash, number }` after every block. Seed `after` explicitly on cold start: with no `after`, `blocks()` starts at the current head and skips history. The substrate's floor is permanently `0`, so a cold start always applies genesis first:
+
 ```ts
-const intervalId = setInterval(() => {
-  replayFinalizedBlocks(gateway, state).catch(console.error)
-}, 5_000)
+import type { XyoGateway } from '@xyo-network/xl1-sdk'
+import { asXL1BlockNumber, finalizedBlockStreamFromGateway } from '@xyo-network/xl1-sdk'
+
+async function followFinalizedBlocks(gateway: XyoGateway, state: IndexerState): Promise<void> {
+  const viewer = gateway.connection.viewer
+  if (!viewer) throw new Error('Gateway has no viewer attached')
+
+  let after = state.lastProcessedHash
+  if (after === undefined) {
+    // Cold start at the permanent floor. Nothing precedes genesis and `blocks()`
+    // has no genesis option, so apply block 0 directly, then resume after it.
+    const genesis = await viewer.block.blockByNumber(asXL1BlockNumber(0, true))
+    if (!genesis) throw new Error('Genesis block unavailable')
+    await applySubstrateBlock(state, genesis)
+    state.lastProcessedHash = genesis[0]._hash
+    state.lastProcessedBlock = genesis[0].block
+    await saveCheckpoint(state)
+    after = state.lastProcessedHash
+  }
+
+  const stream = await finalizedBlockStreamFromGateway(gateway)
+  for await (const { block } of stream.blocks({ after })) {
+    await applySubstrateBlock(state, block)
+    state.lastProcessedHash = block[0]._hash
+    state.lastProcessedBlock = block[0].block
+    await saveCheckpoint(state) // persist the ledger and { hash, number } together
+  }
+}
 ```
 
-5 s is a reasonable default; tune to the chain's finalization cadence. If the indexer crashes, persist `lastProcessedBlock` and the artifacts map so it can resume.
+The cadence knob is the stream's `pollIntervalMs` option (`finalizedBlockStreamFromGateway(gateway, { pollIntervalMs })`; default 10 s, minimum 5 s). Persist `artifacts`, `byOwner`, and the checkpoint atomically so a crash resumes from `lastProcessedHash` without re-applying a block. Stream contract, resume splice, and `FinalizedBlockStreamDesyncError`: [Chain Data Indexing — Service § Finalized block stream](chain-data-indexing-service.md#finalized-block-stream).
 
 ---
 
@@ -379,18 +427,19 @@ Four browse paths, picked by what the UI needs and what infrastructure is availa
 
 ### All inscriptions of a given content type
 
-Walk the chain and use the two-step pattern: each block read returns the on-chain `TransactionBoundWitness` instances, you scan their `payload_schemas[]` for the inscription schema, then fetch the matching `payload_hashes[]` from the datalake via `payloadsByHash`. Inscription payload bodies live in the datalake — they are not in `block[1]` (see [Gateway — What `block.blockByNumber` returns](../xl1-knowledge/gateway.md#what-blockblockbynumber-and-friends-returns--hydration-is-shallow)). For an explorer-style "all inscriptions ever" view, persist `lastSeenBlock` between sessions so each load only walks new blocks; for a recent-window view, walk from `head - WINDOW`.
+Walk the chain and use the two-step pattern: each block read returns the on-chain `TransactionBoundWitness` instances, you scan their `payload_schemas[]` for the inscription schema, then fetch the matching `payload_hashes[]` from the datalake with `datalakeViewer.get(...)`. Inscription payload bodies live in the datalake — they are not in `block[1]` (see [Gateway — What `block.blockByNumber` returns](../xl1-knowledge/gateway.md#what-blockblockbynumber-and-friends-returns--hydration-is-shallow)). For an explorer-style "all inscriptions ever" view, persist `lastSeenBlock` between sessions so each load only walks new blocks; for a recent-window view, walk from `head - WINDOW`.
 
 ```ts
-import { isTransactionBoundWitness } from '@xyo-network/xl1-sdk'
+import { asXL1BlockNumber, isTransactionBoundWitness } from '@xyo-network/xl1-sdk'
 
+// datalakeViewer — RestDataLakeViewer on the dApp's DATALAKE_ENDPOINT (see Replay loop)
 const viewer = defaultGateway.connection.viewer
 if (!viewer) throw new Error('Gateway has no viewer attached')
 
 const head = Number(await viewer.finalization.headNumber())
-const inscriptions: Payload[] = []
+const inscriptions: Inscription[] = []
 for (let n = lastSeenBlock + 1; n <= head; n++) {
-  const hydrated = await viewer.block.blockByNumber(n)
+  const hydrated = await viewer.block.blockByNumber(asXL1BlockNumber(n, true))
   if (!hydrated) continue
   const [, payloads] = hydrated
 
@@ -405,7 +454,7 @@ for (let n = lastSeenBlock + 1; n <= head; n++) {
   }
   if (inscriptionHashes.length === 0) continue
 
-  const fetched = await viewer.block.payloadsByHash(inscriptionHashes)
+  const fetched = await datalakeViewer.get(inscriptionHashes)
   inscriptions.push(...fetched.filter(isInscription))
 }
 ```
@@ -414,29 +463,31 @@ Do not reach for `datalakeViewer.next({ allowedSchemas: [InscriptionSchema] })` 
 
 ### Ownership-aware browsing (per-address side-index)
 
-Query the indexer (or its diviner equivalent). The indexer's `artifacts` map plus a `byOwner: Map<Address, Set<ArtifactId>>` side-index ([Strategy 3](chain-data-indexing-protocol.md#strategy-3-indexer-maintained-per-address-side-index-forward-iteration)) is the read model — expose it via a query interface that returns `ArtifactRecord[]` filtered by `owner`, by `creator`, or by ID. This is the canonical "show me my inscriptions" path when you control an indexer.
+Query the indexer (or its diviner equivalent). The indexer's `artifacts` map plus a `byOwner: Map<XyoAddress, Set<ArtifactId>>` side-index ([Strategy 3](chain-data-indexing-protocol.md#strategy-3-indexer-maintained-per-address-side-index-forward-iteration)) is the read model — expose it via a query interface that returns `ArtifactRecord[]` filtered by `owner`, by `creator`, or by ID. This is the canonical "show me my inscriptions" path when you control an indexer.
 
 ### Free chain-native per-address browsing (sentinel transfers)
 
-If inscriptions were submitted with the dual-sentinel pattern from [Step 2](#step-2-inscribe), per-address browse is free without any indexer infrastructure. Query `accountBalanceHistory(userAddress)`, filter the returned transactions for ones whose `Transfer` has `ORDINAL_SENTINEL` as a recipient, then walk the transaction's `payload_hashes` to recover the inscription:
+If inscriptions were submitted with the dual-sentinel pattern from [Step 2](#step-2-inscribe), per-address browse is free without any indexer infrastructure. Query `accountBalanceHistory(userAddress)`, filter the returned transactions for ones whose `Transfer` has `ORDINAL_SENTINEL` as a recipient, then take the inscription hash from the transaction's `payload_hashes` and read the off-chain body from the datalake:
 
 ```ts
 const history = await defaultGateway.connection.viewer?.account.balance
   .accountBalanceHistory(userAddress)
 
-const myInscriptions = []
+const myInscriptions: Inscription[] = []
 for (const [, tx, transfer] of history ?? []) {
   if (!transfer.transfers[ORDINAL_SENTINEL]) continue
-  const payloads = await defaultGateway.connection.viewer?.block.payloadsByHash(tx.payload_hashes)
-  myInscriptions.push(...(payloads ?? []).filter(isInscription))
+  // The inscription is off-chain — fetch it from the datalake by the hash this tx lists
+  const hashes = tx.payload_hashes.filter((_, i) => tx.payload_schemas[i] === InscriptionSchema)
+  const payloads = await datalakeViewer.get(hashes)
+  myInscriptions.push(...payloads.filter(isInscription))
 }
 ```
 
-Anyone can run this against the chain — it's a chain-native query, no diviner trust required.
+Anyone can run this against the chain plus a datalake holding the bodies — the discovery is a chain-native query, no diviner trust required.
 
 ### Read-only without a wallet
 
-Wrap the dApp in `InPageGatewaysProvider` + `GatewayProvider` ([In-Page Data Lakes](in-page-datalakes.md)). The indexer reads chain state through `useProvidedGateway()`'s `defaultGateway`, which works without a wallet connection. Inscriptions, transfers, and ownership are all browsable for unauthenticated visitors.
+Wrap the dApp in `InPageGatewaysProvider transport="rest"` + `GatewayProvider` ([In-Page Data Lakes](in-page-datalakes.md)). The ownership ledger is a multi-user derived view, so the indexer runs in the companion [service](chain-data-indexing-service.md) and the browser reads it with a relative `fetch('/api/…')`, which needs no wallet. The in-page gateway (`useProvidedGateway()`'s `defaultGateway`) covers bounded chain lookups — a single transaction, a block — and the dApp's datalake viewer returns one inscription's body by hash, so inscriptions, transfers, and ownership are all browsable for unauthenticated visitors.
 
 ---
 
@@ -445,9 +496,10 @@ Wrap the dApp in `InPageGatewaysProvider` + `GatewayProvider` ([In-Page Data Lak
 | Anti-Pattern | Why it fails | Do this instead |
 |---|---|---|
 | Putting `from`, `creator`, or `owner` in the inscription or transfer payload | Mixes declarative content with structural authorship — creates two sources of truth that can disagree | Derive the actor from `transactionBoundWitness.from` |
-| Polling `viewer.block.currentBlockNumber()` for the indexer's replay bound | Includes unfinalized blocks; ownership transitions can be reorged out and the ledger goes stale | Use `viewer.finalization.headNumber()` to bound replay |
+| Polling `viewer.block.currentBlockNumber()` for the indexer's replay bound | Includes unfinalized blocks; ownership transitions can be reorged out and the ledger goes stale | Drive replay from `finalizedBlockStreamFromGateway` ([Polling cadence](#polling-cadence)), or use `viewer.finalization.headNumber()` to bound it |
 | Using `(blockHeight, payloadIndex)` as the inscription ID | Loses content-addressing — byte-identical inscriptions get separate IDs, breaks idempotency, breaks the deploy-collision-is-a-feature property | Use the payload's data hash (`await PayloadBuilder.dataHash(payload)`, or verified `_dataHash` on hydrated payloads) |
 | Reading `payload._hash` right after `PayloadBuilder.build()` | `build()` is synchronous and attaches no hash meta — `_hash` is `undefined`, and `sentinelAddressFromSchema` silently falls back to the static protocol sentinel | `await PayloadBuilder.dataHash(payload)` |
+| Attributing fetched bodies through a `hash → signer` map, or applying them in the order the datalake returns them | Byte-identical payloads in two transactions share a hash: the map keeps one signer, drops the other event, and can credit the wrong account; datalake results carry no ordering guarantee, so apply order — and state — can diverge across indexers | Build ordered `{ hash, signer }` refs — one per occurrence, in block and `payload_hashes[]` order — and apply them in that order, looking bodies up by hash ([Replay loop](#replay-loop)) |
 | Trusting the chain to validate inscription semantics | The chain validates BoundWitness signatures and balance flows only; inscription/transfer rules are off-chain | Indexer enforces rules (target exists, signer is owner) on replay |
 | Committing inscription bytes only to a local archivist before chain submission | The data hash on-chain references bytes nobody else can fetch | Always insert into the dApp's datalake (`RestDataLakeRunner`) before `addPayloadsToChain` |
 | Submitting a transfer signed by an account that isn't the current owner | Indexer drops it silently; on-chain fee is wasted; UX appears broken | Read the indexer's current owner before signing a transfer |
@@ -466,7 +518,7 @@ Wrap the dApp in `InPageGatewaysProvider` + `GatewayProvider` ([In-Page Data Lak
 | Need transfer atomicity (escrow, atomic swap)? | Out of scope for v1. A composite event protocol on top of the substrate handles this |
 | Need to invalidate / burn an inscription? | Define an additional event schema (`network.xyo.ordinal.burn`) and have the indexer remove the record. Out of v1 scope |
 | Multiple indexers across operators? | Encouraged. The substrate's rules are deterministic; competing diviners that agree provide social consensus on ledger state. Document the reference implementation; let others replicate |
-| Reorg deeper than expected? | Persist `lastProcessedBlock` only when finalized; the substrate's finalization-only discipline already handles common reorg windows |
+| Reorg deeper than expected? | Checkpoint (`lastProcessedHash` / `lastProcessedBlock`) only from finalized blocks — the finalized block stream delivers nothing else; the substrate's finalization-only discipline already handles common reorg windows |
 | Need free chain-native per-user discovery without running a global indexer? | Use the dual-sentinel pattern in [Step 2](#step-2-inscribe). `accountBalanceHistory(userAddress)` then surfaces every inscription that user submitted, no diviner required |
 | Need verifiable real cost per inscription? | Per-payload derived burn address — `sentinelAddressFromSchema('network.xyo.ordinal', await PayloadBuilder.dataHash(payload))`. Each inscription burns dust to a unique no-key address |
 | Want both protocol-wide free indexing *and* per-payload burn? | Use both sentinels in one Transfer payload's `transfers` map. One extra payload, two recipients |
@@ -488,20 +540,27 @@ Use cases that warrant this:
 A co-witnessed inscription is a payload with `schema: 'network.xyo.boundwitness'` whose `payload_hashes[]` references the actual content payload (in turn stored in the datalake):
 
 ```ts
+import { asSchema, BoundWitnessBuilder, PayloadBuilder } from '@xyo-network/sdk'
+
+// The content's own application schema, under your namespace
+const ContentSchema = asSchema('com.example.agreement.content', true)
+
 // Content payload — pure declarative
 const content = new PayloadBuilder({ schema: ContentSchema })
   .fields({ contentType: 'application/json', content: '...' })
   .build()
 
 // Inscription payload — a BoundWitness co-signed by multiple parties
-const inscription = await new BoundWitnessBuilder()
+const [inscription] = await new BoundWitnessBuilder()
   .signers([accountA, accountB, accountC])
   .payloads([content])
   .build()
 
-await datalakeRunner.insert([content, inscription[0]])
-await defaultGateway.addPayloadsToChain([], [content, inscription[0]])
+await datalakeRunner.insert([content, inscription])
+await defaultGateway.addPayloadsToChain([], [content, inscription])
 ```
+
+`.signers([...])` signs every slot at `build()`, so it needs all the parties' keys in one process. When the parties sign from separate processes, reserve their slots by address and have each one cosign in turn — see [Primitives — Parties in separate processes](../xyo-knowledge/primitives.md#parties-in-separate-processes-sequential-cosigning).
 
 The wrapping `TransactionBoundWitness` still has a single `from` (the gas payer); the *artifact's* signer set is `inscription.addresses[]`.
 
@@ -511,27 +570,33 @@ When registering a co-witnessed artifact, capture the full signer set, not just 
 
 ```ts
 type CoWitnessedArtifactRecord = ArtifactRecord & {
-  cosigners: Address[]   // all addresses on the inscription BoundWitness
+  cosigners: XyoAddress[]   // all addresses on the inscription BoundWitness
 }
 
 function registerCoWitnessedArtifact(
   state: IndexerState,
-  payload: WithHashMeta<BoundWitness>,  // from payloadsByHash — carries `_hash`
-  gasPayer: Address,
+  payload: WithHashMeta<BoundWitness>,  // from the datalake fetch — hash meta recomputed by addHashMeta
+  gasPayer: XyoAddress,
   blockHeight: XL1BlockNumber,
 ) {
-  const id = payload._hash
+  // Same ID space as every other artifact: the data hash. It is what the cosigners
+  // signed and stays fixed as `$signatures` slots fill; `_hash` (root) does not.
+  const id = payload._dataHash
   if (state.artifacts.has(id)) return
-  state.artifacts.set(id, {
+  const record: CoWitnessedArtifactRecord = {
     id,
     creator: gasPayer,            // who paid to inscribe it
     owner: gasPayer,              // initial owner — could be a different policy
     payload,
     inscribedAt: blockHeight,
     cosigners: payload.addresses, // who attested to the content
-  })
+  }
+  state.artifacts.set(id, record)
+  addToOwner(state, gasPayer, id)
 }
 ```
+
+The replay loop above does not see these yet. To index co-witnessed artifacts, add `BoundWitnessSchema` (from `@xyo-network/sdk`) to `SUBSTRATE_SCHEMAS` so pass 1 collects them, and in `applySubstrateBlock` route a body that is a bound witness wrapping an inscription to `registerCoWitnessedArtifact` — after checking its signatures with `BoundWitnessValidator`, since `addresses[]` alone proves nothing — instead of `registerArtifact`.
 
 The `creator` / `owner` / `cosigners` distinction is intentional. The gas payer initiated the inscription, the cosigners attested to the content, and ownership starts at the gas payer but can transfer independently. Higher-layer protocols can require additional cosigner consent for transfers (e.g., "a notarized artifact can only be transferred if the notary co-signs the transfer event").
 
